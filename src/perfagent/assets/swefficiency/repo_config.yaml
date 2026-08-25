@@ -1,0 +1,187 @@
+# Per-repo pytest configuration for stable test suite building.
+# Each repo has base_args (appended after "pytest") and optional deselect/ignore lists.
+
+repos:
+  pandas-dev/pandas:
+    base_args: >-
+      -qq --tb=long -rf -p no:cacheprovider
+      --continue-on-collection-errors
+      -W "ignore::UserWarning"
+      -m "not slow and not network and not db and not single_cpu"
+      /testbed/pandas
+    deselect:
+      - "pandas/tests/tseries/offsets/test_ticks.py::test_tick_equality"
+      - "pandas/tests/io/test_gcs.py::test_to_csv_compression_encoding_gcs"
+      - "pandas/tests/scalar/timedelta/test_timedelta.py::TestTimedeltas::test_round_sanity"
+      - "pandas/tests/scalar/timestamp/test_unary_ops.py::TestTimestampUnaryOps::test_round_sanity"
+      - "pandas/tests/reshape/test_get_dummies.py::TestGetDummies::test_get_dummies_basic_drop_first_NA"
+      - "pandas/tests/indexes/test_base.py::TestIndex::test_isin_nan_common_object"
+      - "pandas/tests/test_algos.py::TestUnique::test_first_nan_kept"
+      - "pandas/tests/series/methods/test_reindex.py::test_reindex_nan"
+      - "pandas/tests/scalar/timedelta/test_timedelta.py::TestTimedeltas::test_hash_equality_invariance"
+      - "pandas/tests/tseries/offsets/test_offsets_properties.py::test_on_offset_implementations"
+      - "pandas/tests/io/pytables/test_store.py::TestHDFStore::test_coordinates"
+      - "pandas/tests/base/test_unique.py::test_unique_bad_unicode"
+      - "pandas/tests/io/json/test_pandas.py::TestPandasContainer::test_url"
+    ignore:
+      - "pandas/tests/io/test_orc.py"
+      - "pandas/tests/indexing/test_coercion.py"
+    extra_structural_args: [-p, recursion_guard]
+    extra_files:
+      - {src: scripts/recursion_guard.py, dest: /}
+    setup_commands:
+      - command: apt-get update -qq && apt-get install -y tzdata tzdata-legacy || apt-get install -y tzdata
+        context: install tzdata
+
+  astropy/astropy:
+    base_args: >-
+      -qq --tb=long -rf -p no:cacheprovider --continue-on-collection-errors
+      -m "not remote_data" --remote-data=none -o addopts=""
+    deselect:
+      - "astropy/cosmology/flrw/tests/test_lambdacdm.py::TestFlatLambdaCDM::test_toformat_model"
+    extra_files:
+      - {src: scripts/astropy_sitecustomize.py, dest: /sitecustomize.py}
+
+  dask/dask:
+    base_args: >-
+      -qq --tb=long -rf -p no:cacheprovider --continue-on-collection-errors
+      -W "ignore::DeprecationWarning" -m "not network"
+    deselect:
+      - "dask/dataframe/io/tests/test_orc.py"
+      - "dask/array/tests/test_image.py::test_preprocess"
+    profiler_variant: no_native
+
+  matplotlib/matplotlib:
+    base_args: >-
+      -qq --tb=long -rf -p no:cacheprovider --continue-on-collection-errors
+      -m "not network and not flaky"
+    deselect:
+      - "lib/matplotlib/tests/test_backends_interactive.py::test_webagg"
+
+  numpy/numpy:
+    base_args: >-
+      -qq --tb=long -rf -p no:cacheprovider --continue-on-collection-errors
+      --ignore=vendored-meson --ignore=meson_cpu --ignore=build
+    deselect:
+      - "numpy/polynomial/tests/test_printing.py"
+
+  pydata/xarray:
+    base_args: >-
+      -qq --tb=long -rf -p no:cacheprovider --continue-on-collection-errors
+      -m "not flaky and not network and not slow"
+    profiler_variant: no_native
+
+  scikit-learn/scikit-learn:
+    base_args: >-
+      -qq --tb=long -rf -p no:cacheprovider --continue-on-collection-errors
+      -m "not network and not slow"
+    ignore:
+      - "sklearn/neural_network/tests"
+      - "sklearn/model_selection/tests"
+      - "sklearn/manifold/tests"
+
+  scipy/scipy:
+    base_args: >-
+      -qq --tb=long -rf -p no:cacheprovider --continue-on-collection-errors
+      -m "not network and not slow"
+    deselect:
+      - "scipy/stats/tests/test_qmc.py::TestSobol::test_bounds[Unscrambled]"
+      - "scipy/optimize/tests/test__shgo.py"
+    ignore:
+      - "doc/source/tutorial"
+      - "scipy/_lib"
+      - "scipy/stats/tests/test_continuous_basic.py"
+      - "scipy/special/tests/test_mpmath.py"
+
+  sympy/sympy:
+    base_args: >-
+      -qq --tb=long -rf -p no:cacheprovider --continue-on-collection-errors
+      -W "ignore::UserWarning" -W "ignore::SyntaxWarning"
+      -m "not forked and not slow" --assert=plain
+    deselect:
+      - "sympy/utilities/tests/test_code_quality.py::test_files"
+      - "sympy/testing/tests/test_code_quality.py::test_files"
+    ignore:
+      - "sympy/solvers/tests/test_ode.py"
+      - "sympy/utilities/tests/test_wester.py"
+    profiler_variant: no_native
+
+# Per-instance overrides.
+instance_overrides:
+  # Declarative replacements for the old runner's per-instance if-ladders.
+  extra_structural_args_run_only:
+    # Legacy astropy: doctestplus is incompatible; skipped for collect-only
+    # modes in the old code (actual_run always includes it).
+    astropy__astropy-7010: [-p, "no:pytest_doctestplus"]
+    astropy__astropy-7422: [-p, "no:pytest_doctestplus"]
+    astropy__astropy-7616: [-p, "no:pytest_doctestplus"]
+  extra_structural_args:
+    numpy__numpy-21832: [-p, numpy_f2py_state_reset_plugin]
+    scipy__scipy-18917: [-p, scipy_sobol_skip_plugin]
+  extra_files:
+    numpy__numpy-21832:
+      - {src: scripts/numpy_f2py_state_reset_plugin.py, dest: /}
+    scipy__scipy-18917:
+      - {src: scripts/scipy_sobol_skip_plugin.py, dest: /}
+  env:
+    astropy__astropy-7010: {ASTROPY_LEGACY_GET_MARKER_SHIM: "1"}
+    astropy__astropy-7422: {ASTROPY_LEGACY_GET_MARKER_SHIM: "1"}
+    astropy__astropy-7616: {ASTROPY_LEGACY_GET_MARKER_SHIM: "1"}
+  setup_commands:
+    # Old runner upgraded testmon right after setup for legacy astropy; must
+    # run before the testmon seed (the Workspace seeds last).
+    astropy__astropy-7010:
+      - {command: pip install -q --upgrade pytest-testmon, context: upgrade pytest-testmon}
+    astropy__astropy-7422:
+      - {command: pip install -q --upgrade pytest-testmon, context: upgrade pytest-testmon}
+    astropy__astropy-7616:
+      - {command: pip install -q --upgrade pytest-testmon, context: upgrade pytest-testmon}
+
+  extra_deselects:
+    dask__dask-5553:
+      - "dask/array/tests/test_array_core.py::test_arithmetic"
+    pandas-dev__pandas-42841:
+      - "pandas/tests/io/test_gcs.py::test_to_csv_compression_encoding_gcs[zip-utf-8]"
+    pandas-dev__pandas-44566:
+      - "pandas/tests/io/test_gcs.py::test_to_csv_compression_encoding_gcs[zip-cp1251]"
+      - "pandas/tests/window/test_online.py::TestEWM::test_update_times_mean"
+    scikit-learn__scikit-learn-15049:
+      - "sklearn/gaussian_process/tests/test_kernels.py::test_kernel_gradient[kernel17]"
+      - "sklearn/neighbors/tests/test_nca.py::test_warm_start_effectiveness"
+    scikit-learn__scikit-learn-17235:
+      - "sklearn/gaussian_process/tests/test_kernels.py::test_kernel_gradient[kernel17]"
+      - "sklearn/utils/tests/test_validation.py::test_check_is_fitted"
+      - "sklearn/tests/test_common.py::test_estimators[NuSVC()-check_methods_subset_invariance]"
+      - "sklearn/tests/test_common.py::test_estimators[SparsePCA()-check_methods_subset_invariance]"
+      - "sklearn/tests/test_common.py::test_estimators[MiniBatchSparsePCA()-check_methods_subset_invariance]"
+    scikit-learn__scikit-learn-9843:
+      - "sklearn/utils/tests/test_validation.py::test_check_is_fitted_with_attributes[single]"
+      - "sklearn/utils/tests/test_validation.py::test_check_is_fitted_with_attributes[list]"
+      - "sklearn/utils/tests/test_validation.py::test_check_is_fitted_with_attributes[tuple]"
+
+  extra_ignores:
+    scikit-learn__scikit-learn-17235:
+      - sklearn/metrics/tests
+      - sklearn/ensemble/tests
+      - sklearn/neighbors/tests
+      - sklearn/svm/tests
+      - sklearn/tree/tests
+    scipy__scipy-18917:
+      - scipy/fft/tests/test_real_transforms.py
+      - scipy/fft/_pocketfft/tests/test_real_transforms.py
+      - scipy/stats/tests/test_distributions.py
+      - scipy/ndimage/tests/test_filters.py
+      - scipy/ndimage/tests/test_interpolation.py
+      - scipy/linalg/tests/test_decomp_polar.py
+      - scipy/linalg/tests/test_lapack.py
+      - scipy/sparse/linalg/_eigen/lobpcg/tests/test_lobpcg.py
+      - scipy/sparse/linalg/_eigen/tests/test_svds.py
+      - scipy/sparse/tests/test_base.py
+      - scipy/stats/tests/test_multicomp.py
+      - scipy/stats/tests/test_multivariate.py
+      - scipy/stats/tests/test_hypotests.py
+      - scipy/stats/tests/test_qmc.py
+      - scipy/stats/tests/test_sensitivity_analysis.py
+      - scipy/linalg/tests/test_basic.py
+      - scipy/_build_utils/tests/test_scipy_version.py
+      - scipy/special/tests/test_data.py

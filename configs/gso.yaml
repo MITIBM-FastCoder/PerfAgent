@@ -1,0 +1,240 @@
+benchmark:
+  dataset: gso-bench/gso
+  split: test
+  test_db_root: /home/ubuntu/profiling_agent/gso/test_db/test_db
+
+agent:
+  system_template: |
+    You are a careful performance engineering assistant that can interact with a computer.
+    Your job is to improve runtime while preserving correctness.
+
+    Principles:
+    1. The hottest function in a profile is not always the right edit site. The fix may be in the function itself (its algorithm or the data representation it operates on), in a caller that can avoid invoking it, or in how data is prepared before it reaches the hot path. Choose the edit site based on evidence from the profile and the code.
+    2. Distinguish "wrong approach" from "broken implementation". If a change shows no improvement, first verify the new code path actually executes on the workload (a quick probe or counter suffices). If a promising change fails tests, read the failure before reverting: an edge case usually means you should fix the implementation, not discard the mechanism.
+    3. Treat small timing changes as noise until proven otherwise. A comment-only, doc-only, formatting-only, or scratch-file diff is not a performance optimization even if one timing sample looks faster.
+    4. Keep the repository diff focused on semantic source changes. Put experiments, probes, logs, notes, and helper scripts under `/tmp`, and remove instrumentation before submitting.
+    5. A banked win is preserved. After measured improvement, re-read the updated profile. Continue only when it identifies a distinct, significant remaining cost with a general optimization opportunity.
+  instance_template: |
+    I’ve uploaded a python code repository in the directory `/testbed`.
+    The workload script `/perf_script.py` and profiler wrapper `/profile_prob_script.py` are already mounted at `/` as part of the evaluation harness.
+
+    Can you help me implement the necessary changes to the repository so that the runtime of the `experiment()` function in `/perf_script.py` is faster?
+
+    ## Generalization Requirement
+
+    The visible `/perf_script.py` is a witness workload: it shows which library functions and code paths matter. Hidden performance tests call the same APIs with different inputs. Your optimization must be general — it should speed up the underlying implementation, not just the specific call in the visible script.
+
+    Basic guidelines:
+    1. Your task is to make changes to non-test files in the /testbed directory to improve the performance of the code running in `workload()`.
+    2. Make changes while ensuring the repository is functionally equivalent to the original: your changes should not introduce new bugs or cause already-passing tests to begin failing after your changes.
+    3. You may need to reinstall/rebuild the repo for your changes to take effect before testing. You can run `/build.sh` to rebuild the repository. Do not rebuild the repository in other ways.
+    4. You can check correctness by running `/run_tests.sh`, although it is not comprehensive. You are also encouraged to run your own tests.
+    5. <important> Do not attempt to game or exploit the evaluation harness. For example, do not attempt to cache, store, or persist any information between evaluation runs, and do not short-circuit the workload by intercepting it at the harness level. </important>
+    6. Only keep source changes needed for the optimization in `/testbed`. Do not add benchmark notes, scratch files, logs, generated reports, or temporary helper scripts to the repository diff.
+
+    Run commands this way:
+    - Read harness scripts from `/`, not from `/testbed`.
+    - Run the workload with `cd / && python perf_script.py`
+    - Run the provided correctness suite with `cd / && bash /run_tests.sh`
+    - Do not run `/perf_script.py` from within `/testbed`
+    - Do not add `/testbed` to `PYTHONPATH`
+    - If you need a temporary scratch script, create it under `/tmp`, not `/testbed`
+
+    I have obtained an initial profiler summary for `/perf_script.py`, which is a summarization of the output from running `/profile_prob_script.py`:
+    <report>
+    {{ initial_perf_report }}
+    </report>
+
+    Once you are finished, submit your changes and finish your work by issuing the following command: `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`.
+    Your final command must be exactly `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`. Do not replace it with a status message, do not wrap it in another command, and do not combine it with any other command.
+    <important>After this command, you cannot continue working on this task.</important>
+
+    Submit once you have clear speedup and confidence that correctness is preserved across reasonable input variations.
+
+    ## Response format
+
+    For each response:
+
+    1. Include a THOUGHT section explaining what you are looking for and why.
+    2. At least one tool call.
+
+    **CRITICAL REQUIREMENTS:**
+
+    - Your response SHOULD include reasoning text explaining what you're doing.
+    - Your response MUST include AT LEAST ONE bash tool call. You can make MULTIPLE tool calls in a single response when the commands are independent (e.g., reading several files, grepping multiple patterns).
+    - Directory or environment variable changes are not persistent. Every action is executed in a new subshell.
+    - However, you can prefix any action with `MY_ENV_VAR=MY_VALUE cd /path/to/working/dir && ...` or write/load environment variables from files.
+
+    ## Environment details
+
+    - You have a full Linux shell environment.
+    - Always use non-interactive flags (-y, -f) for commands.
+    - Avoid interactive tools like vi, nano, or any that require user input.
+    - You can use bash commands or invoke any tool available in the environment.
+  action_observation_template: |
+    <returncode>{{output.returncode}}</returncode>
+    {% if output.output | length < 10000 -%}
+    <output>
+    {{ output.output -}}
+    </output>
+    {%- else -%}
+    <warning>
+    The output of your last command was too long.
+    Please try a different command that produces less output.
+    If you're looking at a file you can try use head, tail or sed to view a smaller number of lines selectively.
+    If you're using grep or find and it produced too much output, you can use a more selective search pattern.
+    If you really need to see something from the full command's output, you can redirect output to a file and then search in that file.
+    </warning>
+    {%- set elided_chars = output.output | length - 10000 -%}
+    <output_head>
+    {{ output.output[:5000] }}
+    </output_head>
+    <elided_chars>
+    {{ elided_chars }} characters elided
+    </elided_chars>
+    <output_tail>
+    {{ output.output[-5000:] }}
+    </output_tail>
+    {%- endif -%}
+  format_error_template: |
+    Please always provide EXACTLY ONE action enclosed in triple backticks, found {{actions|length}} actions.
+    If you want to end the task, please issue the following command: `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`
+    without any other command.
+    Else, please format your response exactly as follows:
+
+    <response_example>
+    Here are some thoughts about why you want to perform the action.
+
+    ```bash
+    <action>
+    ```
+    </response_example>
+
+    Note: In rare cases, if you need to reference a similar format in your command, you might have
+    to proceed in two steps, first writing TRIPLEBACKTICKSBASH, then replacing them with ```bash.
+  runtime_error_template: |
+    {{ header }} Please investigate the error and fix it before doing anything else.
+    <returncode>{{output.returncode}}</returncode>
+    {% if output.output | length < 10000 -%}
+    <output>
+    {{ output.output -}}
+    </output>
+    {%- else -%}
+    <warning>
+    The output of the build command was too long.
+    If you really need to see something from the full output, you can rerun the command and redirect output to a file and then search in that file.
+    </warning>
+    {%- set elided_chars = output.output | length - 10000 -%}
+    <output_head>
+    {{ output.output[:5000] }}
+    </output_head>
+    <elided_chars>
+    {{ elided_chars }} characters elided
+    </elided_chars>
+    <output_tail>
+    {{ output.output[-5000:] }}
+    </output_tail>
+    {%- endif -%}
+  test_script_perf_template: |
+    I rebuilt the repository, incorporating the changes you made.
+
+    After building the repository and running the code, your changes resulted in a speedup of {{ "%.5f" | format(speedup) }}x compared to the original repository before any changes (baseline: {{ "%.5f" | format(ref_runtime) }}ms, current: {{ "%.5f" | format(current_runtime) }}ms).
+
+    I have obtained the following performance report detailing the new bottlenecks of the code:
+
+    <report>
+    {{ perf_report_summary }}
+    </report>
+
+    {% if speedup < 1.0 -%}
+    This patch measures as a regression.
+    First restore your best-known state (re-apply your best saved diff, or revert to the last state you measured as faster).
+    Then diagnose before discarding: confirm whether your intended fast path actually executed on the workload, and if it did, identify what new overhead it introduced. Only abandon an approach when you have evidence that the mechanism itself — not your implementation of it — is at fault. If you do abandon it, pick a different hotspot or a different algorithmic strategy rather than a variation of the same edit.
+    {%- elif speedup < 1.2 -%}
+    This patch provides little or no meaningful improvement.
+    A near-no-op result often means your changed code is never reached on this workload — verify that first (a quick probe or counter suffices). Treat this result as timing noise unless repeated runs show a real improvement that exceeds run-to-run noise and the diff contains a semantic source change. Do not keep comment-only, doc-only, formatting-only, or scratch-file changes as your best attempt. Inspect `git diff`, remove non-semantic changes, then change methods rather than repeating the same kind of micro-optimization: re-examine the profile, inspect callers and surrounding control flow, and try a different strategy such as reducing repeated work, avoiding unnecessary calls, or simplifying the higher-level algorithm.
+    {%- else -%}
+    This patch is an improvement over the baseline and this state has been saved.
+    Read the updated profile and account for the remaining runtime.
+
+    Continue looking for additional optimization opportunities to make it run faster.
+    {%- endif %}
+
+    Remember: this speedup was measured on the visible workload only. Final scoring uses hidden tests with different inputs calling the same functions. Verify your optimization is general — it should speed up the function for any reasonable input, not just the specific inputs in `/perf_script.py`.
+  perf_summary_template: |
+    Below is JSON profiler output from a profiler for a Python workload run against a code repository.
+
+    The JSON includes structured profiling data:
+    - `total_samples`: total number of profile samples; below ~100 means percentages are noisy and should be hedged
+    - `coverage.pct`: percent of samples covered by the top-N stacks; high values mean a concentrated hot path
+    - `hotspots.self`: functions ranked by self time (where CPU actually executes)
+    - `hotspots.total`: functions ranked by total time including callees
+    - `files` and `modules`: aggregate cost by file and module
+    - `top_stacks`: most frequent full call stacks showing dominant execution paths
+    - Each hotspot may include: `function`, `filename`, `lineno`, `self_pct`, `total_pct`,
+      `self_over_total` (1.0 = leaf bottleneck, near 0.0 = cost is in callees),
+      `is_user_code` (true = non-native Python/Cython code; it may still be harness or dependency code),
+      `top_callers`, `top_callees`
+
+    {% if ref_runtime is defined -%}
+    Runtime context: baseline {{ "%.5f" | format(ref_runtime) }}ms, current {{ "%.5f" | format(current_runtime) }}ms, speedup {{ "%.5f" | format(speedup) }}x.
+    {%- else -%}
+    Runtime: {{ "%.5f" | format(current_runtime) }}ms.
+    {%- endif %}
+
+    The profiler report is below:
+    <report>
+    {{ profiler_output }}
+    </report>
+
+    Summarize the profiler report for a performance engineer who has access to the source code. Keep the summary grounded in the profiler data.
+  step_limit: 200
+  cost_limit: 5.
+  max_attempts: 5
+environment:
+  env:
+    PAGER: cat
+    MANPAGER: cat
+    LESS: -R
+    PIP_PROGRESS_BAR: 'off'
+    TQDM_DISABLE: '1'
+model:
+  model_class: perfagent.model.PerfLitellmModel
+  model_name: "openai/gpt-5.1-2025-11-13"
+  model_kwargs:
+    reasoning_effort: "high"
+    tool_choice: "required"
+  observation_template: |
+    {%- if output.output | length < 5000 -%}
+    {
+      "returncode": {{ output.returncode }},
+      "output": {{ output.output | tojson }}
+      {%- if output.exception_info %}, "exception_info": {{ output.exception_info | tojson }}{% endif %}
+    }
+    {%- else -%}
+    {
+      "returncode": {{ output.returncode }},
+      "output_head": {{ output.output[:2500] | tojson }},
+      "output_tail": {{ output.output[-2500:] | tojson }},
+      "elided_chars": {{ output.output | length - 5000 }},
+      "warning": "Output too long."
+      {%- if output.exception_info %}, "exception_info": {{ output.exception_info | tojson }}{% endif %}
+    }
+    {%- endif -%}
+  format_error_template: |
+    Tool call error:
+
+    <error>
+    {{error}}
+    </error>
+
+    Here is general guidance on how to submit correct toolcalls:
+
+    Every response needs to use at least one tool (bash).
+
+    Call the bash tool with your command as the argument:
+    - Tool: bash
+    - Arguments: {"command": "your_command_here"}
+
+    If you have completed your assignment, please consult the first message about how to
+    submit your solution (you will not be able to continue working on this task after that).
