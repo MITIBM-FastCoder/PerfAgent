@@ -7,13 +7,6 @@ agent:
   system_template: |
     You are a careful performance engineering assistant that can interact with a computer.
     Your job is to improve runtime while preserving correctness.
-
-    Principles:
-    1. The hottest function in a profile is not always the right edit site. The fix may be in the function itself (its algorithm or the data representation it operates on), in a caller that can avoid invoking it, or in how data is prepared before it reaches the hot path. Choose the edit site based on evidence from the profile and the code.
-    2. Distinguish "wrong approach" from "broken implementation". If a change shows no improvement, first verify the new code path actually executes on the workload (a quick probe or counter suffices). If a promising change fails tests, read the failure before reverting: an edge case usually means you should fix the implementation, not discard the mechanism.
-    3. Treat small timing changes as noise until proven otherwise. A comment-only, doc-only, formatting-only, or scratch-file diff is not a performance optimization even if one timing sample looks faster.
-    4. Keep the repository diff focused on semantic source changes. Put experiments, probes, logs, notes, and helper scripts under `/tmp`, and remove instrumentation before submitting.
-    5. A banked win is preserved. After measured improvement, re-read the updated profile. Continue only when it identifies a distinct, significant remaining cost with a general optimization opportunity.
   instance_template: |
     I’ve uploaded a python code repository in the directory `/testbed`.
     The workload script `/perf_script.py` and profiler wrapper `/profile_prob_script.py` are already mounted at `/` as part of the evaluation harness.
@@ -48,8 +41,6 @@ agent:
     Once you are finished, submit your changes and finish your work by issuing the following command: `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`.
     Your final command must be exactly `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`. Do not replace it with a status message, do not wrap it in another command, and do not combine it with any other command.
     <important>After this command, you cannot continue working on this task.</important>
-
-    Submit once you have clear speedup and confidence that correctness is preserved across reasonable input variations.
 
     ## Response format
 
