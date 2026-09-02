@@ -15,7 +15,7 @@ class PerfLitellmModel(LitellmModel):
         try:
             merged = {"tools": [BASH_TOOL]} | self.config.model_kwargs | kwargs
             # A pure-text query (tools=[]) must not also request/force a tool call:
-            # tool_choice with no tools is rejected by the OpenAI/Azure API.
+            # tool_choice set to `required` with no tools is rejected by the OpenAI API.
             if not merged.get("tools"):
                 merged.pop("tool_choice", None)
             return litellm.completion(

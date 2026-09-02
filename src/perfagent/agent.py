@@ -32,6 +32,20 @@ class PerfAgentConfig(AgentConfig):
     """Template for performance test results with speedup metrics."""
     perf_summary_template: str
     """Template for requesting profiler output summarization."""
+    duplicate_submission_template: str = (
+        "Your submission was not evaluated: the current repository diff is byte-identical to "
+        "{% if attempt_index == 0 %}the unmodified reference code (speedup 1.00000x)"
+        "{% else %}attempt {{ attempt_index }}, which was already measured at "
+        '{{ "%.5f" | format(speedup) }}x{% endif %}. '
+        "Re-evaluating the same diff cannot improve your result.\n"
+        "This submission did not consume one of your optimization attempts. Make a materially "
+        "different change before submitting again. If you have exhausted your ideas, submit again "
+        "without making any changes to end the run."
+    )
+    """Template for rejecting a submission whose diff is byte-identical to an already-measured attempt.
+
+    Variables: `attempt_index` (0 = reference baseline, n = n-th optimization attempt) and `speedup`.
+    """
     max_attempts: int = 5
     """Maximum number of optimization attempts before stopping."""
     action_regex: str = r"```bash\s*\n(.*?)\n```"
@@ -76,13 +90,32 @@ class PerfAgent(DefaultAgent):
         )
 
         attempt = 0
+        rejected_last_submission = False
         while True:
             try:
                 self.step()
+                rejected_last_submission = False  # the model took a regular action since the last rejection
             except Submitted:
                 # Remove the assistant message that triggered submission so it doesn't confuse the model
                 if self.messages and self.messages[-1].get("role") == "assistant":
                     self.messages.pop()
+                matched = self._find_matching_attempt(self._get_current_diff())
+                if matched is not None:
+                    # Duplicate of an already-measured diff: re-measuring cannot change the result.
+                    if rejected_last_submission:
+                        # Re-submitted with no action in between, right after being told it was a
+                        # duplicate. The model has signalled it is done; end the run.
+                        self.logger.info("Duplicate submission immediately after a rejected duplicate; ending run")
+                        break
+                    rejected_last_submission = True
+                    self.logger.info(
+                        f"Submission rejected: diff is byte-identical to attempt {matched} "
+                        f"(speedup {self.opt_attempts[matched].speedup:.5f}x); attempt not consumed"
+                    )
+                    self.add_messages(
+                        self.model.format_message(role="user", content=self._render_duplicate_submission(matched))
+                    )
+                    continue
                 attempt += 1
                 self.logger.info(f"Model reports completion (attempt {attempt}/{self.config.max_attempts})")
                 profiler_report = self._run_profiler(reference=False)
@@ -120,18 +153,12 @@ class PerfAgent(DefaultAgent):
         return exit_extra
 
     def step(self) -> list[dict]:
-        """Query the model and execute the resulting action."""
         response = self.query()
         self.logger.info(f"LLM response: {response['content']}")
         return self._get_observation(response)
 
     def _get_observation(self, response: dict) -> list[dict]:
-        """Execute actions from the response and return observation messages.
-
-        Uses structured tool-call actions if available, otherwise falls back to
-        regex-based action parsing from the response content.
-        """
-        # Try structured actions first (tool-call models)
+        # Execute actions from the response in the environment
         actions = response.get("extra", {}).get("actions", [])
         if actions:
             outputs = []
@@ -146,7 +173,7 @@ class PerfAgent(DefaultAgent):
                 *self.model.format_observation_messages(response, outputs, self.get_template_vars())
             )
 
-        # Fallback in case there aren't any tool calls
+        # Fallback in case there aren't any tool calls which shouldn't happen as tool_choice is set to required on the config
         parsed = self._parse_action(response)
         command = parsed["action"]
         if command.lower() == "true":
@@ -159,7 +186,6 @@ class PerfAgent(DefaultAgent):
         return self.add_messages(self.model.format_message(role="user", content=observation))
 
     def _parse_action(self, response: dict) -> dict:
-        """Parse a bash action from the response content using regex."""
         content = response.get("content", "")
         actions = re.findall(self.config.action_regex, content, re.DOTALL)
         if len(actions) == 1:
@@ -176,31 +202,25 @@ class PerfAgent(DefaultAgent):
             content=self._render_template_with_vars(self.config.format_error_template, actions=actions),
         ))
 
-    # --- Profiling methods ---
-
     def _get_current_diff(self) -> str:
-        """Return the current worktree diff, staged the same way _run_profiler records it."""
+        # Return the current worktree diff, use the same command that _run_profiler uses.
         return self.env.execute({"command": "git add -A && git diff --cached"}, cwd="/testbed")["output"]
 
     def _find_matching_attempt(self, diff: str) -> int | None:
-        """Index of the recorded attempt whose diff is byte-identical to `diff`, if any.
-
-        Index 0 is the reference baseline (empty diff), so a clean worktree matches it.
-        """
         for idx, attempt in enumerate(self.opt_attempts):
             if attempt.diff.strip() == diff.strip():
                 return idx
         return None
 
-    def _flush_unrecorded_diff(self) -> None:
-        """Bank whatever is left in the working tree when the run ends.
+    def _render_duplicate_submission(self, attempt_index: int) -> str:
+        return self._render_template_with_vars(
+            self.config.duplicate_submission_template,
+            attempt_index=attempt_index,
+            speedup=self.opt_attempts[attempt_index].speedup,
+        )
 
-        Runs ending on LimitsExceeded/context-window/bad-request (or whose final
-        submission failed post-submit validation) can leave a verified-fast diff in
-        /testbed that was never recorded as an attempt. If the current diff is
-        non-empty and not already recorded, run the same validate-and-record
-        pipeline as a submission; on build/test failure nothing is recorded.
-        """
+    def _flush_unrecorded_diff(self) -> None:
+        # If run into LimitsExceeded error, try to use the diff in the current repo as an attempt
         try:
             diff = self._get_current_diff()
             if not diff.strip() or self._find_matching_attempt(diff) is not None:
@@ -216,14 +236,14 @@ class PerfAgent(DefaultAgent):
             self.logger.warning(f"Failed to flush final working-tree diff: {e}")
 
     def _get_reference_profiler_report(self) -> str:
-        """Run the profiler on the reference (unmodified) code and return the report."""
+        """Run the profiler on the base repository, before any changes are made."""
         report = self._run_profiler(reference=True)
         self.logger.info("Reference profiler report obtained")
         self.logger.info(report)
         return report
 
     def _run_profiler(self, reference: bool = False) -> str:
-        """Build, test, and profile the code. Returns a rendered report string."""
+        # Build, test, and profile the code. 
         if not reference:
             build_output = self.env.execute({"command": self.config.build_command})
             if build_output["returncode"] != 0:
@@ -289,12 +309,7 @@ class PerfAgent(DefaultAgent):
         )
 
     def _get_profiler_summary(self, profiler_output: dict, runtime: float, reference: bool) -> str:
-        """Use the LLM to summarize profiler output.
-
-        This is a pure text-completion call (no tool use), so we pass tools=[]
-        to prevent the model from emitting tool calls and the parser from
-        raising FormatError when none are found.
-        """
+        """Make a call to LLM to summarize profiler output. Pass in tools=[] to prevent the model from emitting tool calls."""
         extra = {"profiler_output": profiler_output["output"], "current_runtime": runtime}
         if not reference and self.opt_attempts:
             extra["ref_runtime"] = self.opt_attempts[0].runtime
@@ -312,7 +327,6 @@ class PerfAgent(DefaultAgent):
         return response["content"]
 
     def _get_runtime(self, output: str) -> float:
-        """Extract runtime value from profiler output (looks for lines containing '_runtime')."""
         for line in output.splitlines():
             line = line.strip()
             if "_runtime" in line:
@@ -323,9 +337,7 @@ class PerfAgent(DefaultAgent):
         raise RuntimeError(f"Cannot parse runtime from output: {output}")
 
     def _get_opt_attempts(self) -> list[dict]:
-        """Return optimization attempts (excluding the reference baseline) as dicts."""
         return [asdict(attempt) for attempt in self.opt_attempts[1:]]
 
     def serialize(self, *extra_dicts) -> dict:
-        """Extend serialization to include optimization attempt data."""
         return super().serialize({"opt_attempts": self._get_opt_attempts()}, *extra_dicts)

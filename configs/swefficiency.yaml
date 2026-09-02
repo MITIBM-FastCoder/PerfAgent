@@ -144,6 +144,9 @@ agent:
     This patch is an improvement over the baseline. Save this state (e.g. `git diff > /tmp/win_best.patch`) before experimenting further, then continue looking for additional optimization opportunities to make it run faster.
     If you tried a new optimization approach that did not improve performance, consider whether the implementation was incorrect before concluding the approach itself is wrong. A correct approach with a faulty implementation should be iterated on, not abandoned.
     {%- endif %}
+  duplicate_submission_template: |-
+    Your submission was not evaluated: the current repository diff is byte-identical to {% if attempt_index == 0 %}the unmodified reference code (speedup 1.00000x){% else %}attempt {{ attempt_index }}, which was already measured at {{ "%.5f" | format(speedup) }}x{% endif %}. Re-evaluating the same diff cannot improve your result.
+    This submission did not consume one of your optimization attempts. Make a materially different change before submitting again. If you have exhausted your ideas, submit again without making any changes to end the run.
   perf_summary_template: |
     Below is JSON profiler output from a profiler for a Python workload run against a code repository.
 

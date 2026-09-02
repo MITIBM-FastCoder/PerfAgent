@@ -152,6 +152,9 @@ agent:
     {%- endif %}
 
     Remember: this speedup was measured on the visible workload only. Final scoring uses hidden tests with different inputs calling the same functions. Verify your optimization is general — it should speed up the function for any reasonable input, not just the specific inputs in `/perf_script.py`.
+  duplicate_submission_template: |-
+    Your submission was not evaluated: the current repository diff is byte-identical to {% if attempt_index == 0 %}the unmodified reference code (speedup 1.00000x){% else %}attempt {{ attempt_index }}, which was already measured at {{ "%.5f" | format(speedup) }}x{% endif %}. Re-evaluating the same diff cannot improve your result.
+    This submission did not consume one of your optimization attempts. Make a materially different change before submitting again. If you have exhausted your ideas, submit again without making any changes to end the run.
   perf_summary_template: |
     Below is JSON profiler output from a profiler for a Python workload run against a code repository.
 
