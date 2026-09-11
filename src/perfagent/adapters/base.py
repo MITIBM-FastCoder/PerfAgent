@@ -41,11 +41,18 @@ def load_dataset_row(dataset_name: str, split: str, *, instance_id: str | None, 
         raise ValueError(f"run id {run_id} out of range for {dataset_name} ({len(dataset)} rows)")
     return dataset[run_id]
 
-def require_artifact(path: Path, *, instance_id: str, what: str) -> Path:
+TEST_DB_HINT = (
+    "Download the test_db dataset (https://huggingface.co/datasets/ryandeng/perfagent-test-db) "
+    "and point benchmark.test_db_root in your run config, or --test-db-root, at its gso/ or "
+    "swefficiency/ subdirectory. See README, section 'Test DB'."
+)
+PACKAGED_ASSET_HINT = (
+    "This file ships inside the perfagent package (src/perfagent/assets/). "
+    "Reinstall the package, or check that the instance id is one of the supported tasks."
+)
+
+def require_artifact(path: Path, *, instance_id: str, what: str, hint: str = TEST_DB_HINT) -> Path:
+    """Return `path` if it is a file, else raise FileNotFoundError naming the artifact and how to get it."""
     if not path.is_file():
-        raise FileNotFoundError(
-            f"missing {what} for {instance_id}: {path}\n"
-            "Check benchmark.test_db_root in your run config (or --test-db-root); "
-            "artifacts are regenerable with the old repo's get_test_db.py."
-        )
+        raise FileNotFoundError(f"missing {what} for {instance_id}: {path}\n{hint}")
     return path

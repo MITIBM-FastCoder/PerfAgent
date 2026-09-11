@@ -17,27 +17,33 @@ This repository is the harness used to run and evaluate PerfAgent on the [GSO](h
 
 > **On two challenging optimization benchmarks, GSO and SWE-fficiency-Lite, PerfAgent more than doubles the rate of expert-matching patches over OpenHands with GPT-5.1, improving from 19.6% to 39.2% on GSO and from 26% to 74% on SWE-fficiency-Lite.**
 
-> [!IMPORTANT]
-> **One artifact is still missing from this release: `test_db`, the per-instance archives of stable tests.** The harness reads them to decide which tests validate each patch, so a benchmark run stops with a `FileNotFoundError` until they are in place. Everything else in this repository is complete: you can install the package, inspect the configs and prompts, and read the paper's released results in [`artifacts/`](#artifacts). Publishing `test_db` is the first item in [`TODOs.md`](TODOs.md). See [Test DB](#test-db-required-not-yet-published) for the required layout and the current status.
-
 ## Table of contents
 
-- [How it works](#how-it-works)
-- [Benchmarks](#benchmarks)
-- [Results](#results)
-- [Prerequisites](#prerequisites)
-- [Install](#install)
-- [Quickstart](#quickstart)
-- [CLI reference](#cli-reference)
-- [Configuration](#configuration)
-- [Test DB (required, not yet published)](#test-db-required-not-yet-published)
-- [Docker images](#docker-images)
-- [Code layout](#code-layout)
-- [artifacts/](#artifacts)
-- [Reproducing the paper](#reproducing-the-paper)
-- [FAQ / troubleshooting](#faq--troubleshooting)
-- [License](#license)
-- [Citation](#citation)
+- [PerfAgent](#perfagent)
+  - [Table of contents](#table-of-contents)
+  - [How it works](#how-it-works)
+    - [Pipeline](#pipeline)
+  - [Benchmarks](#benchmarks)
+  - [Results](#results)
+    - [GSO](#gso)
+    - [SWE-fficiency-Lite](#swe-fficiency-lite)
+  - [Prerequisites](#prerequisites)
+  - [Install](#install)
+  - [Quickstart](#quickstart)
+  - [CLI reference](#cli-reference)
+  - [Configuration](#configuration)
+    - [Environment variables](#environment-variables)
+      - [Which instances need `HF_TOKEN`](#which-instances-need-hf_token)
+    - [Cost and step limits](#cost-and-step-limits)
+  - [Test DB (required)](#test-db-required)
+    - [Required layout](#required-layout)
+  - [Docker images](#docker-images)
+  - [Code layout](#code-layout)
+  - [artifacts/](#artifacts)
+  - [Reproducing the paper](#reproducing-the-paper)
+  - [FAQ / troubleshooting](#faq--troubleshooting)
+  - [License](#license)
+  - [Citation](#citation)
 
 ## How it works
 
@@ -99,10 +105,7 @@ All numbers below are GPT-5.1, from the paper. Columns are Correctness / Sp@1 / 
 |---|---|---|---|---|
 | OpenHands | 88.2 | 46.1 | 20.6 | 19.6 |
 | Codex | 89.2 | 48.0 | 18.6 | 17.7 |
-| A_L (loop only) | 91.2 | 67.6 | 33.3 | 29.4 |
-| +Tests | 96.1 | 47.1 | 24.5 | 20.6 |
-| +Profiler | 95.1 | 70.6 | 36.3 | 34.4 |
-| **PerfAgent** | **96.1** | **77.5** | **44.1** | **39.2** |
+| **PerfAgent** | 89.2 | **74.5** | **42.1** | **41.2** |
 
 ### SWE-fficiency-Lite
 
@@ -110,19 +113,7 @@ All numbers below are GPT-5.1, from the paper. Columns are Correctness / Sp@1 / 
 |---|---|---|---|---|
 | OpenHands | 82 | 47 | 27 | 26 |
 | Codex | 80 | 59 | 39 | 39 |
-| A_L (loop only) | 80 | 64 | 49 | 46 |
-| +Tests | 93 | 64 | 49 | 46 |
-| +Profiler | 83 | 73 | 59 | 57 |
-| **PerfAgent** | **90** | **83** | **75** | **74** |
-
-### Cost
-
-| Benchmark | PerfAgent, $/task | OpenHands best@5 (oracle judge), $/task |
-|---|---|---|
-| GSO | $2.88 | $11.01 |
-| SWE-fficiency-Lite | $4.25 | $9.91 |
-
-PerfAgent scores higher than OpenHands best@5 on Opt@1 and Hack-Adj. on both benchmarks, and costs less per task.
+| **PerfAgent** | **90** | **83** | **74** | **74** |
 
 ## Prerequisites
 
@@ -130,7 +121,7 @@ PerfAgent scores higher than OpenHands best@5 on Opt@1 and Hack-Adj. on both ben
 - [`uv`](https://docs.astral.sh/uv/).
 - A running Docker daemon. Task containers start with `--cap-add=SYS_PTRACE --cap-add=LINUX_IMMUTABLE --security-opt=seccomp=unconfined` (`src/perfagent/spec.py:6-11`). `SYS_PTRACE` lets `py-spy --native` attach to the workload process. `LINUX_IMMUTABLE` lets the harness mark the build, test, and profiler scripts read-only inside the container (`chattr +i`), so the agent cannot edit them. **Rootless Docker and many CI runners refuse these capabilities.** Run this on a host with a standard root-mode Docker daemon.
 - Docker images pulled per instance from Docker Hub (`ryandeng1/perfagent:{benchmark}.{instance_id}`). Each task has its own image, built for that repository at that commit. Image sizes are not measured or recorded anywhere in this repository, so budget disk space conservatively before a full run. `py-spy` itself runs *inside* the container, as part of the image. Do not install `py-spy` on the host.
-- The `test_db` artifact. **Not yet published.** See [Test DB](#test-db-required-not-yet-published) below. Without it, no real instance can run.
+- The `test_db` artifact, downloaded from the Hugging Face dataset [`ryandeng/perfagent-test-db`](https://huggingface.co/datasets/ryandeng/perfagent-test-db). See [Test DB](#test-db-required) for the download command and where to point the harness.
 - A Hugging Face token in `HF_TOKEN`, and an LLM provider key in `OPENAI_API_KEY`. The harness refuses to start without `HF_TOKEN`, even though only 7 of the 202 tasks download anything from Hugging Face. See [Environment variables](#environment-variables).
 
 ## Install
@@ -194,10 +185,10 @@ A run config is a YAML file with exactly four possible top-level keys: `benchmar
 |---|---|---|
 | `benchmark.dataset` | yes | Hugging Face dataset id: `gso-bench/gso` or `swefficiency/swefficiency_lite`. |
 | `benchmark.split` | no | Dataset split, default `"test"`. |
-| `benchmark.test_db_root` | yes, unless `--test-db-root` is passed | Root directory of the `test_db` artifact. See [Test DB](#test-db-required-not-yet-published). |
+| `benchmark.test_db_root` | yes, unless `--test-db-root` is passed | Root directory of the `test_db` artifact. See [Test DB](#test-db-required). |
 | `agent.*` | no | Maps to `PerfAgentConfig` / mini-swe-agent's `AgentConfig`. Jinja2 templates: `system_template`, `instance_template`, `action_observation_template`, `format_error_template`, `runtime_error_template`, `test_script_perf_template`, `perf_summary_template`, `duplicate_submission_template`. Plus `step_limit`, `cost_limit`, `max_attempts` (default 5). `action_regex`, `build_command` (default `/build.sh`), `test_command` (default `/run_tests.sh`), `profile_command`, `reference_profile_command`, and `workload_script` are defaulted in code and rarely need overriding. |
 | `environment.env` | no | Dict merged into the container's environment. |
-| `environment.timeout` | no | Command timeout in seconds, default 7200 (`spec.py:42`). Any key under `environment` other than `env`/`timeout` raises a `ValueError` (`workspace.py:35-36`). |
+| `environment.timeout` | no | Command timeout in seconds, default 7200 (`spec.py:42`). Any key under `environment` other than `env`/`timeout` raises a `ValueError` (`workspace.py:34-35`). |
 | `model.model_class` / `model.model_name` / `model.model_kwargs` | no | Passed to `minisweagent.models.get_model`. |
 
 `configs/gso.yaml` and `configs/swefficiency.yaml` are the exact configs used for the paper's PerfAgent (GPT-5.1) results.
@@ -229,26 +220,33 @@ The remaining 195 tasks never contact Hugging Face, but `cli.py:49` still refuse
 
 ### Cost and step limits
 
-Runs cost real money. The shipped configs set `agent.cost_limit: 5.0` (USD per task) and `agent.step_limit: 200`. The paper measured $2.88/task on GSO and $4.25/task on SWE-fficiency-Lite with these settings.
+Runs cost real money. The shipped configs set `agent.cost_limit: 5.0` (USD per task) and `agent.step_limit: 200`.
 
-## Test DB (required, not yet published)
+## Test DB (required)
 
-Both shipped configs point `benchmark.test_db_root` at a path that exists only on the original authors' machine:
+`test_db` holds, per instance, the calibrated stable test suite the harness runs to validate a patch. It is published as the Hugging Face dataset [`ryandeng/perfagent-test-db`](https://huggingface.co/datasets/ryandeng/perfagent-test-db). The dataset card describes how the suites were calibrated.
 
-- `configs/gso.yaml:4` &rarr; `/home/ubuntu/profiling_agent/gso/test_db/test_db`
-- `configs/swefficiency.yaml:4` &rarr; `/home/ubuntu/profiling_agent/swefficiency/test_db/new_test_db`
+| Benchmark | Download size |
+|---|---|
+| GSO | 29 MB |
+| SWE-fficiency-Lite | 14.5 GB, almost all of it the per-instance `.testmondata` seeds |
 
-There is no download link, dataset id, or generation script in this repository. The code's own error message (`src/perfagent/adapters/base.py:49`) names "the old repo's `get_test_db.py`" as the fix. That script does not exist anywhere in this repository. Running any real instance fails at this point today. For example:
+Download it with the `hf` CLI, which `uv sync` installs into the project environment:
 
+```bash
+uv run hf download ryandeng/perfagent-test-db --repo-type dataset --local-dir test_db
+# one benchmark only:
+uv run hf download ryandeng/perfagent-test-db --repo-type dataset --local-dir test_db --include "gso/*"
 ```
-FileNotFoundError: missing stable suite artifact for huggingface__datasets-5994036: /home/ubuntu/.../stable_suite.tar.gz
-```
 
-> **TODO(maintainers):** the `test_db` archive is not yet published. Download URL, dataset id, or generation instructions go here. Tracked in `TODOs.md`.
+This creates `test_db/gso/<instance_id>/...` and `test_db/swefficiency/<instance_id>/...`. Point the harness at the **benchmark subdirectory**, not the dataset root:
+
+- on the command line with `--test-db-root test_db/gso` (or `test_db/swefficiency`), which takes precedence over the config, or
+- in the config, by setting `benchmark.test_db_root`. The shipped configs still carry the original authors' local paths (`configs/gso.yaml:4`, `configs/swefficiency.yaml:4`); replace them with `test_db/gso` and `test_db/swefficiency`.
 
 ### Required layout
 
-Once available, `test_db_root` must contain, per instance:
+`test_db_root` must contain, per instance:
 
 ```
 <test_db_root>/<instance_id>/stable_suite.tar.gz   # both benchmarks
@@ -258,7 +256,7 @@ Once available, `test_db_root` must contain, per instance:
 - `stable_suite.tar.gz` must contain the member `stable_suite/excluded_collectors.txt`, a list of collector paths turned into `--ignore=` pytest arguments. This member may be absent. The harness also unpacks the whole archive to `/stable_suite` inside the container (`workspace.py:73-76`) and passes `EXCLUDED_NODEIDS_FILE=/stable_suite/excluded_nodeids.txt` to the pytest invocation.
 - `.testmondata` is required for SWE-fficiency only (`adapters/swefficiency.py:86-90`). GSO generates its testmon database fresh inside the container via `TESTMON_DATAFILE` (`adapters/gso.py:289`).
 
-This layout was reverse-engineered from `src/perfagent/adapters/gso.py:213-217`, `src/perfagent/adapters/swefficiency.py:81-95`, and `src/perfagent/pytest_cmd.py:91-101,185,232`.
+The harness reads this layout in `src/perfagent/adapters/gso.py:213-217`, `src/perfagent/adapters/swefficiency.py:81-95`, and `src/perfagent/pytest_cmd.py:91-101,185,232`.
 
 ## Docker images
 
@@ -268,6 +266,7 @@ Images are pulled anonymously from Docker Hub at `ryandeng1/perfagent:{benchmark
 
 - `src/perfagent/adapters/`: benchmark-specific code that builds the `HarnessSpec` for each instance (build script, test script, files to copy, profiler variant).
 - `src/perfagent/workspace.py`: pulls the Docker image and materializes the container (copies build/test/profiler/workload scripts, extracts the stable test suite, seeds testmon data).
+- `src/perfagent/environment.py` (`PerfDockerEnvironment`): mini-swe-agent's Docker environment plus what the harness needs on top of it: a command prefix applied to every command (GSO activates the testbed venv this way) and a `docker cp` helper used by `workspace.py`.
 - `src/perfagent/agent.py` (`PerfAgent`): the agent loop, built on [`mini-swe-agent`](https://github.com/SWE-agent/mini-swe-agent), implementing the STOP interception and best-patch selection described above.
 - `src/perfagent/model.py` (`PerfLitellmModel`): thin litellm wrapper used for both the agent's tool-calling queries and the plain-text profiler-summary queries.
 - `src/perfagent/repo_config.py`: resolves per-benchmark assets through `importlib.resources`, not through a path relative to the current working directory. The harness therefore runs from any directory. It also runs from an installed package, not only from a checkout.
@@ -280,14 +279,15 @@ Outputs released with the paper, not something the harness regenerates locally:
 - `artifacts/predictions/gso.jsonl`, `artifacts/predictions/swefficiency.jsonl`: the model's patches for every task (`model_name_or_path: gpt-5.1`), one JSON object per line, 102 and 100 lines respectively.
 - `artifacts/reports/gso_report.json`, `artifacts/reports/swefficiency.csv`: per-task correctness and speedup results underlying the tables above.
 - `artifacts/reports/gso_hack_detection.json`, `artifacts/reports/swefficiency_hack_detection.json`: per-task output of the reward-hacking detector used for the Hack-Adj. column.
+- `artifacts/trajectories/gso/{instance_id}/traj.json`, `artifacts/trajectories/swefficiency/{instance_id}/traj.json`: trajectories for each instance id in each benchmark for GPT 5.1.
 
 ## Reproducing the paper
 
-The paper evaluates two models: GPT-5.1 at high reasoning effort, and Kimi-K2 as the open-source model (K2-0711 on GSO, K2-0905 on SWE-fficiency-Lite). Both run on Mini-SWE-Agent. For Kimi-K2, the paper adds an OpenHands structured file-editing tool, because open-source models struggle to edit files reliably through raw bash. This repository ships the **GPT-5.1 configs only** (`configs/gso.yaml`, `configs/swefficiency.yaml`). The Kimi-K2 variant with the OpenHands editing tool is not included here (tracked in `TODOs.md`).
+The paper evaluates two models: GPT-5.1 at high reasoning effort, and Kimi-K2 as the open-source model (K2-0711 on GSO, K2-0905 on SWE-fficiency-Lite). Both run on Mini-SWE-Agent. For Kimi-K2, the paper adds an OpenHands-style structured file-editing tool (`str_replace_editor`), because open-source models struggle to edit files reliably through raw bash. This repository ships the **GPT-5.1 configs only** (`configs/gso.yaml`, `configs/swefficiency.yaml`). The Kimi-K2 variant with the editing tool is not included here (tracked in `TODOs.md`).
 
 Controller settings: `theta = 5` loop iterations, `$5` max cost per task, 200 step limit.
 
-Hardware: agents ran on an AWS EC2 `c6i.8xlarge` (32 CPU, 64 GB RAM). Evaluation, meaning the timing runs, ran on an `m8i.16xlarge` (64 CPU, 256 GB RAM), matching GSO's and SWE-fficiency's own evaluation setups. Timing results are hardware-sensitive. Reproducing the paper's speedup numbers needs comparable dedicated hardware. A laptop, a shared CI runner, or a differently-sized instance will give different speedups than the paper reports.
+Hardware: agents ran on an AWS EC2 `c6i.8xlarge` (32 CPU, 64 GB RAM). Benchmark evaluation was run on an `m8i.16xlarge` (64 CPU, 256 GB RAM), matching GSO's and SWE-fficiency's own evaluation setups. Timing results are hardware-sensitive. Reproducing the paper's speedup numbers needs comparable dedicated hardware.
 
 ## FAQ / troubleshooting
 
@@ -298,19 +298,16 @@ Export the token anyway: `export HF_TOKEN=...`. `cli.py:49` checks for the varia
 Set the API key for whatever provider `model.model_name` in your config points to. For the shipped configs (`openai/gpt-5.1-2025-11-13`), export `OPENAI_API_KEY`. To use a different provider, edit `model.model_name` in the YAML to any [litellm-supported model id](https://docs.litellm.ai/docs/providers) and export that provider's key env var instead. There is no CLI flag for model selection.
 
 **I get `FileNotFoundError: missing stable suite artifact ... /home/ubuntu/...`.**
-This is the `test_db` blocker described in [Test DB](#test-db-required-not-yet-published). The shipped configs point `benchmark.test_db_root` at a path from the original authors' machine. You need a real `test_db` with `<instance_id>/stable_suite.tar.gz` (and, for SWE-fficiency, `<instance_id>/.testmondata`) under a directory you control. Then point `benchmark.test_db_root` (or `--test-db-root`) at it. The artifact is not yet published. See the `TODO(maintainers)` note above and `TODOs.md`.
+`benchmark.test_db_root` still points at the original authors' path. Download the `test_db` dataset and point the harness at the benchmark subdirectory with `--test-db-root test_db/gso` (or `test_db/swefficiency`), or set `benchmark.test_db_root` in your config. See [Test DB](#test-db-required).
 
 **How do I use a different LLM?**
 Edit `model.model_name` in your config YAML to any [litellm-supported model id](https://docs.litellm.ai/docs/providers), and set that provider's API key environment variable. There is no `--model` CLI flag.
 
 **How much does a run cost, and how do I cap it?**
-Set `agent.cost_limit` (USD), `agent.step_limit`, and `agent.max_attempts` in your config. The shipped configs use `cost_limit: 5.0`, `step_limit: 200`, `max_attempts: 5`. The paper measured $2.88/task on GSO and $4.25/task on SWE-fficiency-Lite with the same settings.
+Set `agent.cost_limit` (USD), `agent.step_limit`, and `agent.max_attempts` in your config. The shipped configs use `cost_limit: 5.0`, `step_limit: 200`, `max_attempts: 5`.
 
 **I get a Docker permission or capability error mentioning `SYS_PTRACE`, `LINUX_IMMUTABLE`, or `seccomp`.**
 Task containers require `--cap-add=SYS_PTRACE --cap-add=LINUX_IMMUTABLE --security-opt=seccomp=unconfined` (`spec.py:6-11`). Rootless Docker and many CI runners refuse to grant these. Run on a host with a standard root-mode Docker daemon.
-
-**Can I run this on a laptop or macOS?**
-The CLI itself runs fine on macOS. The actual work happens inside Linux containers pulled from Docker Hub. Timing is hardware-sensitive. Speedup numbers measured on a laptop will not match the paper, whatever the host operating system.
 
 **Why is my speedup different from the paper's numbers?**
 Three likely causes:
@@ -336,7 +333,7 @@ done
 Runs are independent, so you can parallelize this loop across processes or machines. Running many instances on the same host at once creates CPU contention, which affects timing measurements. Avoid heavy parallelism on a single machine if accurate speedups matter to you.
 
 **What do the files in `artifacts/` contain?**
-See [artifacts/](#artifacts) above for the paper's released model patches, correctness and speedup reports, and reward-hacking detection results. The harness does not regenerate these files. They are the frozen outputs used to produce the results tables.
+See [artifacts/](#artifacts) above for the paper's released model patches, correctness and speedup reports, and reward-hacking detection results.
 
 **How do I add a new benchmark?**
 1. Write an adapter class under `src/perfagent/adapters/<name>.py` that subclasses `BenchmarkAdapter` (`src/perfagent/adapters/base.py`) and implements `build_spec()`, returning a `HarnessSpec`.

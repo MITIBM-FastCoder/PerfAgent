@@ -7,7 +7,7 @@ import yaml
 
 from perfagent import pytest_cmd
 from perfagent import repo_config as rc
-from perfagent.adapters.base import IMAGE_REPO, BenchmarkAdapter, Instance, require_artifact
+from perfagent.adapters.base import IMAGE_REPO, PACKAGED_ASSET_HINT, BenchmarkAdapter, Instance, require_artifact
 from perfagent.spec import ContainerFile, HarnessSpec, SetupCommand
 
 PROFILER_VARIANT_FILES = {
@@ -30,7 +30,8 @@ def _install_command(repo: str, version: str) -> str:
     except KeyError:
         raise KeyError(
             f"no vendored install spec for {repo} version {version}; "
-            "regenerate assets/swefficiency/install_specs.yaml with tools/vendor_swefficiency_specs.py"
+            "add it to assets/swefficiency/install_specs.yaml from "
+            "swefficiency.harness.constants.MAP_REPO_VERSION_TO_SPECS in the swefficiency package"
         ) from None
 
 def _extra_files(config: dict, repo: str, instance_id: str, assets: Path) -> list[ContainerFile]:
@@ -92,6 +93,7 @@ class SwefficiencyAdapter(BenchmarkAdapter):
             assets / "workloads" / instance_id / "perf_script.py",
             instance_id=instance_id,
             what="workload script (packaged asset)",
+            hint=PACKAGED_ASSET_HINT,
         )
 
         build_script = "\n".join(

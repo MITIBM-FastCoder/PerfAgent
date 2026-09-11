@@ -5,7 +5,7 @@ from pathlib import Path
 
 from perfagent import pytest_cmd
 from perfagent import repo_config as rc
-from perfagent.adapters.base import IMAGE_REPO, BenchmarkAdapter, Instance, require_artifact
+from perfagent.adapters.base import IMAGE_REPO, PACKAGED_ASSET_HINT, BenchmarkAdapter, Instance, require_artifact
 from perfagent.spec import ContainerFile, HarnessSpec, SetupCommand
 
 # For tasks in HEAVY_TIMING_REPOS, run the timing script only once, otherwise run the timing script 5 times, mirroring the GSO evaluation, to reduce variance.
@@ -219,6 +219,7 @@ class GsoAdapter(BenchmarkAdapter):
             assets / "workloads" / instance_id / "perf_script.py",
             instance_id=instance_id,
             what="workload script (packaged asset)",
+            hint=PACKAGED_ASSET_HINT,
         )
 
         is_llama_cpp = "llama-cpp-python" in repo

@@ -6,18 +6,17 @@ import tempfile
 import docker
 from rich.console import Console
 
-from minisweagent.environments.docker import DockerEnvironment
-
+from perfagent.environment import PerfDockerEnvironment
 from perfagent.spec import HarnessSpec
 
 console = Console(highlight=False)
 
-def _execute_or_raise(env: DockerEnvironment, command: str, *, cwd: str = "", context: str) -> dict:
+def _execute_or_raise(env: PerfDockerEnvironment, command: str, *, cwd: str = "", context: str) -> dict:
     output = env.execute({"command": command}, cwd=cwd)
     assert output["returncode"] == 0, f"{context} failed. output: {output['output']}"
     return output
 
-def _copy_script(env: DockerEnvironment, text: str, dest: str) -> None:
+def _copy_script(env: PerfDockerEnvironment, text: str, dest: str) -> None:
     with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=True) as f:
         f.write(text)
         f.flush()
@@ -25,7 +24,7 @@ def _copy_script(env: DockerEnvironment, text: str, dest: str) -> None:
     _execute_or_raise(env, f"chmod +x {shlex.quote(dest)}", context=f"chmod {dest}")
     _execute_or_raise(env, f"chattr +i {shlex.quote(dest)}", context=f"chattr {dest}")
 
-def materialize(spec: HarnessSpec, environment_config: dict | None = None) -> DockerEnvironment:
+def materialize(spec: HarnessSpec, environment_config: dict | None = None) -> PerfDockerEnvironment:
     environment_config = dict(environment_config or {})
     docker.from_env().images.pull(spec.image)  # anonymous pull from the public DockerHub mirror
     console.print(f"image: {spec.image}", style="bright_cyan")
@@ -35,7 +34,7 @@ def materialize(spec: HarnessSpec, environment_config: dict | None = None) -> Do
     if environment_config:
         raise ValueError(f"unknown environment config keys: {sorted(environment_config)}")
 
-    env = DockerEnvironment(
+    env = PerfDockerEnvironment(
         image=spec.image,
         forward_env=list(spec.forward_env),
         command_prefix=spec.command_prefix,
