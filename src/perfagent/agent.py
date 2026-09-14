@@ -1,6 +1,7 @@
 """Agent for performance optimization, based on mini-swe-agent"""
 
 import re
+import uuid
 from dataclasses import asdict, dataclass
 
 import litellm
@@ -9,6 +10,8 @@ from jinja2 import StrictUndefined, Template
 from minisweagent import Environment, Model
 from minisweagent.agents.default import AgentConfig, DefaultAgent
 from minisweagent.exceptions import FormatError, InterruptAgentFlow, LimitsExceeded, Submitted
+
+from perfagent.tools import get_tool
 
 # Record each successful agent attempt, which is outputted after the agent finishes.
 @dataclass
@@ -69,6 +72,7 @@ class PerfAgent(DefaultAgent):
         super().__init__(model, env, config_class=config_class, **kwargs)
         self.opt_attempts: list[OptAttempt] = []
         self.summary_model = self.model
+        self._tool_namespace = uuid.uuid4().hex  # keeps this agent's editor undo history apart from others'
 
     def _render_template_with_vars(self, template: str, **extra_vars) -> str:
         return Template(template, undefined=StrictUndefined).render(**self.get_template_vars(**extra_vars))
@@ -163,12 +167,12 @@ class PerfAgent(DefaultAgent):
         if actions:
             outputs = []
             for action in actions:
-                if action.get("command", "").lower() == "true":
+                if action.get("tool", "bash") == "bash" and action.get("command", "").lower() == "true":
                     raise Submitted(self.model.format_message(
                         role="exit", content="",
                         extra={"exit_status": "Submitted", "submission": ""},
                     ))
-                outputs.append(self.env.execute(action))
+                outputs.append(self._execute_action(action))
             return self.add_messages(
                 *self.model.format_observation_messages(response, outputs, self.get_template_vars())
             )
@@ -184,6 +188,17 @@ class PerfAgent(DefaultAgent):
         output = self.env.execute({"command": command})
         observation = self._render_template_with_vars(self.config.action_observation_template, output=output)
         return self.add_messages(self.model.format_message(role="user", content=observation))
+
+    def _execute_action(self, action: dict) -> dict:
+        """Run one action: bash straight through the environment, anything else through the
+        registered tool of that name (perfagent.tools), which itself executes in the environment."""
+        tool_name = action.get("tool", "bash")
+        if tool_name == "bash":
+            return self.env.execute(action)
+        tool = get_tool(tool_name)
+        if tool is None:
+            return {"output": f"Unknown tool: {tool_name}", "returncode": 1}
+        return tool.execute(self.env, action.get("args", {}), namespace=self._tool_namespace)
 
     def _parse_action(self, response: dict) -> dict:
         content = response.get("content", "")

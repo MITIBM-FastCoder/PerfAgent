@@ -9,6 +9,7 @@ from rich.console import Console
 from perfagent import pyspy
 from perfagent.environment import PerfDockerEnvironment
 from perfagent.spec import HarnessSpec
+from perfagent.tools import str_replace_editor
 
 console = Console(highlight=False)
 
@@ -56,6 +57,8 @@ def materialize(spec: HarnessSpec, environment_config: dict | None = None) -> Pe
         env.copy_to_container(src=str(file.src), dest=file.dest)
         if file.executable:
             _execute_or_raise(env, f"chmod +x {shlex.quote(file.dest)}", context=f"chmod {file.dest}")
+    # The str_replace_editor tool's in-container runtime (used only when a config enables the tool).
+    env.copy_to_container(src=str(str_replace_editor.RUNTIME_SRC), dest=str_replace_editor.CONTAINER_PATH)
 
     console.print("--- build script ---", style="bright_cyan")
     console.print(spec.build_script)
