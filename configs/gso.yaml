@@ -1,7 +1,6 @@
 benchmark:
+  name: gso
   dataset: gso-bench/gso
-  split: test
-  test_db_root: /home/ubuntu/profiling_agent/gso/test_db/test_db
 
 agent:
   system_template: |

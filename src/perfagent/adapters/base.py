@@ -14,11 +14,15 @@ class Instance:
     repo: str
     raw: dict  # the plain HF dataset row
 
+DATASET_SPLIT = "test"
+"""Both benchmark datasets (gso-bench/gso, swefficiency/swefficiency_lite) publish only this split."""
+
+
 class BenchmarkAdapter:
     name: str
 
-    def load_instance(self, dataset_name: str, split: str, *, instance_id: str | None, run_id: int | None) -> Instance:
-        row = load_dataset_row(dataset_name, split, instance_id=instance_id, run_id=run_id)
+    def load_instance(self, dataset_name: str, *, instance_id: str | None, run_id: int | None) -> Instance:
+        row = load_dataset_row(dataset_name, instance_id=instance_id, run_id=run_id)
         return Instance(instance_id=row["instance_id"], repo=row["repo"], raw=row)
 
     def image_tag(self, instance: Instance) -> str:
@@ -28,10 +32,10 @@ class BenchmarkAdapter:
         raise NotImplementedError
 
 
-def load_dataset_row(dataset_name: str, split: str, *, instance_id: str | None, run_id: int | None) -> dict:
+def load_dataset_row(dataset_name: str, *, instance_id: str | None, run_id: int | None) -> dict:
     if (instance_id is None) == (run_id is None):
         raise ValueError("exactly one of instance_id / run_id must be given")
-    dataset = load_dataset(dataset_name, split=split)
+    dataset = load_dataset(dataset_name, split=DATASET_SPLIT)
     if instance_id is not None:
         filtered = dataset.filter(lambda example: example["instance_id"] == instance_id)
         if len(filtered) != 1:
@@ -43,7 +47,7 @@ def load_dataset_row(dataset_name: str, split: str, *, instance_id: str | None, 
 
 TEST_DB_HINT = (
     "Download the test_db dataset (https://huggingface.co/datasets/ryandeng/perfagent-test-db) "
-    "and point benchmark.test_db_root in your run config, or --test-db-root, at its gso/ or "
+    "and point --test-db-root at its gso/ or "
     "swefficiency/ subdirectory. See README, section 'Test DB'."
 )
 PACKAGED_ASSET_HINT = (

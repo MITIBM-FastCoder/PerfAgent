@@ -3,11 +3,12 @@
 **Profiler-Guided Iterative Refinement for Repository-Level Code Optimization**
 
 Ryan Deng (MIT), Yuanzhe Liu (RPI), Bastian Lipka (IBM), Yao Ma (RPI), Xuhao Chen (Michigan State), Tim Kaler (MIT)&dagger;, Jatin Ganhotra (IBM Research)&dagger;
+
 &dagger; co-senior authors
 
 [arXiv:2607.19653](https://arxiv.org/abs/2607.19653) (cs.SE)
 
-This repository is the harness used to run and evaluate PerfAgent on the [GSO](https://github.com/gso-bench/gso) and [SWE-fficiency](https://github.com/swefficiency/swefficiency) benchmarks.
+This repository contains the harness used to run PerfAgent on the [GSO](https://gso-bench.github.io/) and [SWE-fficiency](https://swefficiency.com/) benchmarks.
 
 <p align="center">
   <img src="docs/overview.png" alt="PerfAgent overview" width="720">
@@ -15,7 +16,7 @@ This repository is the harness used to run and evaluate PerfAgent on the [GSO](h
 
 <p align="center"><sub>Figure 1 from the paper: PerfAgent wraps a coding agent with a profiler, a loop controller, and selective test validation.</sub></p>
 
-> **On two challenging optimization benchmarks, GSO and SWE-fficiency-Lite, PerfAgent more than doubles the rate of expert-matching patches over OpenHands with GPT-5.1, improving from 19.6% to 39.2% on GSO and from 26% to 74% on SWE-fficiency-Lite.**
+> **On two challenging optimization benchmarks, GSO and SWE-fficiency-Lite, PerfAgent more than doubles the rate of expert-matching patches over OpenHands with GPT-5.1, improving from 19.6% to 41.2% on GSO and from 26% to 74% on SWE-fficiency-Lite.**
 
 ## Table of contents
 
@@ -32,33 +33,30 @@ This repository is the harness used to run and evaluate PerfAgent on the [GSO](h
   - [Quickstart](#quickstart)
   - [CLI reference](#cli-reference)
   - [Configuration](#configuration)
-    - [Environment variables](#environment-variables)
-      - [Which instances need `HF_TOKEN`](#which-instances-need-hf_token)
     - [Cost and step limits](#cost-and-step-limits)
+    - [The str\_replace\_editor tool](#the-str_replace_editor-tool)
   - [Test DB (required)](#test-db-required)
-    - [Required layout](#required-layout)
   - [Docker images](#docker-images)
+    - [Patched py-spy](#patched-py-spy)
+    - [Profiling loop](#profiling-loop)
   - [Code layout](#code-layout)
   - [artifacts/](#artifacts)
   - [Reproducing the paper](#reproducing-the-paper)
   - [FAQ / troubleshooting](#faq--troubleshooting)
-  - [License](#license)
   - [Citation](#citation)
 
 ## How it works
 
-PerfAgent wraps an off-the-shelf coding agent ([Mini-SWE-Agent](https://github.com/SWE-agent/mini-swe-agent)) with three feedback mechanisms. Each one targets a specific failure mode of plain agentic optimization.
+PerfAgent wraps an off-the-shelf coding agent ([Mini-SWE-Agent](https://github.com/SWE-agent/mini-swe-agent)) with three feedback mechanisms. Each one targets a specific failure mode of LLM agents running on these benchmarks.
 
-1. **Curated profiler usage**, against missing the real bottleneck.
-   The agent gets a [py-spy](https://github.com/benfred/py-spy) sampling profile instead of a guess. py-spy samples at 100 Hz over a minimum 10-second window. It captures both Python and native-extension frames. `cProfile`, by contrast, sees Python code only and adds high overhead. The harness removes setup frames from the samples. The remaining samples form hotspots with location, call stack, self-time, total-time, sample share, and an external-library flag. A separate LLM call turns this into a short natural-language summary for the agent.
+1. **Curated profiler usage**, addresses agents missing the real bottleneck.
+   The agent gets a profile of the program from the [py-spy](https://github.com/benfred/py-spy) profiler. It captures both Python and native-extension frames and produces raw stack frames. These raw stack frames are parsed using `parse_pyspy.py`, and a json output is produced. The json contains hotspots with info on location, call stack, self-time, total-time. PerfAgent then queries a LLM to summarize the output for the coding agent.
 
-2. **Objective-driven loop controller**, against premature termination.
-   When the agent signals STOP, the harness does not end the run. It applies the patch, rebuilds the repository, revalidates it, and profiles it again. It then reports the updated hotspots and the measured speedup, and asks the agent to continue, for up to `theta = 5` iterations. A best-patch selector tracks the fastest CORRECT patch across all iterations. It reports that patch, not the last one the agent submitted.
+2. **Objective-driven loop controller**, addresses agents terminating prematurely.
+   When the agent signals STOP (in mini-swe-agent's case the command is `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`), the harness applies the patch, rebuilds the repository, revalidates it, and profiles it again. It then reports the updated hotspots and the measured speedup, and asks the agent to continue, for up to `theta = 5` iterations. At the end, PerfAgent selects the best-performing CORRECT patch across all iterations. Note that best-performing means only on the provided workload. GSO, for example, has hidden performance tests that PerfAgent does not have access to.
 
 3. **Selective validation**, against insufficient testing.
-   [pytest-testmon](https://github.com/tarpas/pytest-testmon) runs only the tests whose coverage overlaps the agent's changes. This catches regressions without the cost of the full suite on every iteration. A failing test is returned to the agent as feedback. This cuts the number of tests run by 66-99% on GSO and 47-98% on SWE-fficiency-Lite.
-
-The measurement layer discourages reward hacking on its own. The reported timing is the *first* run only, not an average over the profiling loop's repeated executions. Caching results across timing iterations therefore cannot inflate the score. In one ablation, this change dropped flagged reward hacks from 18 to 3.
+   [pytest-testmon](https://github.com/tarpas/pytest-testmon) runs only the tests whose coverage overlaps the agent's changes. A failing test is returned to the agent as feedback.
 
 ### Pipeline
 
@@ -76,7 +74,7 @@ The measurement layer discourages reward hacking on its own. The reported timing
   <img src="docs/pipeline.png" alt="PerfAgent pipeline" width="720">
 </p>
 
-<p align="center"><sub>Operational view of the same loop, from the paper.</sub></p>
+<p align="center"><sub>Overview of agentic loop, from the paper.</sub></p>
 
 ## Benchmarks
 
@@ -85,7 +83,7 @@ The measurement layer discourages reward hacking on its own. The reported timing
 | [GSO](https://github.com/gso-bench/gso) | 10 | 102 | 2.43x | 140 | 41% / 45% / 10% / 4% |
 | [SWE-fficiency-Lite](https://github.com/swefficiency/swefficiency) | 9 | 100 | 3.57x | 20 | 88% / 1% / 11% / 0% |
 
-GSO has hidden performance tests beyond the workload script the agent can see. SWE-fficiency-Lite is a 100-task random subset of SWE-fficiency with no hidden tests.
+GSO has hidden performance tests beyond the workload script which the agent does not have access to. SWE-fficiency-Lite is a 100-task random subset of SWE-fficiency with no hidden tests.
 
 **Metrics**
 
@@ -97,7 +95,7 @@ GSO has hidden performance tests beyond the workload script the agent can see. S
 
 ## Results
 
-All numbers below are GPT-5.1, from the paper. Columns are Correctness / Sp@1 / Opt@1 / Hack-Adj., all in percent. `A_L` is the loop controller alone. `+Tests` and `+Profiler` each add one mechanism to `A_L`. `PerfAgent` combines all three.
+All numbers below are for GPT-5.1. Columns are Correctness / Sp@1 / Opt@1 / Hack-Adj., all in percent.
 
 ### GSO
 
@@ -105,7 +103,7 @@ All numbers below are GPT-5.1, from the paper. Columns are Correctness / Sp@1 / 
 |---|---|---|---|---|
 | OpenHands | 88.2 | 46.1 | 20.6 | 19.6 |
 | Codex | 89.2 | 48.0 | 18.6 | 17.7 |
-| **PerfAgent** | 89.2 | **74.5** | **42.1** | **41.2** |
+| **PerfAgent** | **93.1** | **74.5** | **42.1** | **41.2** |
 
 ### SWE-fficiency-Lite
 
@@ -113,16 +111,16 @@ All numbers below are GPT-5.1, from the paper. Columns are Correctness / Sp@1 / 
 |---|---|---|---|---|
 | OpenHands | 82 | 47 | 27 | 26 |
 | Codex | 80 | 59 | 39 | 39 |
-| **PerfAgent** | **90** | **83** | **74** | **74** |
+| **PerfAgent** | **98** | **80** | **74** | **74** |
 
 ## Prerequisites
 
 - Python 3.12 or newer.
 - [`uv`](https://docs.astral.sh/uv/).
-- A running Docker daemon. Task containers start with `--cap-add=SYS_PTRACE --cap-add=LINUX_IMMUTABLE --security-opt=seccomp=unconfined` (`src/perfagent/spec.py:6-11`). `SYS_PTRACE` lets `py-spy --native` attach to the workload process. `LINUX_IMMUTABLE` lets the harness mark the build, test, and profiler scripts read-only inside the container (`chattr +i`), so the agent cannot edit them. **Rootless Docker and many CI runners refuse these capabilities.** Run this on a host with a standard root-mode Docker daemon.
+- Docker. All tasks are run within a docker container.
 - Docker images pulled per instance from Docker Hub (`ryandeng1/perfagent:{benchmark}.{instance_id}`). Each task has its own image, built for that repository at that commit. Image sizes are not measured or recorded anywhere in this repository, so budget disk space conservatively before a full run. `py-spy` itself runs *inside* the container, as part of the image. Do not install `py-spy` on the host.
 - The `test_db` artifact, downloaded from the Hugging Face dataset [`ryandeng/perfagent-test-db`](https://huggingface.co/datasets/ryandeng/perfagent-test-db). See [Test DB](#test-db-required) for the download command and where to point the harness.
-- A Hugging Face token in `HF_TOKEN`, and an LLM provider key in `OPENAI_API_KEY`. The harness refuses to start without `HF_TOKEN`, even though only 7 of the 202 tasks download anything from Hugging Face. See [Environment variables](#environment-variables).
+- A Hugging Face token `HF_TOKEN`, and an LLM provider key such as `OPENAI_API_KEY`.
 
 ## Install
 
@@ -132,29 +130,19 @@ cd PerfAgent
 uv sync
 ```
 
-`uv sync` creates `.venv/` and installs the `perfagent` command into it. Run the command through `uv run perfagent`, as shown below. `uv run` also syncs the environment first, so a separate `uv sync` is optional.
-
-Check the install without touching Docker or any API:
-
-```bash
-uv run perfagent --help
-```
-
 ## Quickstart
 
 ```bash
-export HF_TOKEN=...          # required for every run, even when the task never uses it
-export OPENAI_API_KEY=...    # required for the shipped GPT-5.1 configs
+export HF_TOKEN=...          # for some GSO tasks that may require downloading data from huggingface
+export OPENAI_API_KEY=...    # or alternatively some other LLM provider API key
 
 uv run perfagent \
-  --benchmark gso \
   --config-path configs/gso.yaml \
+  --test-db-root test_db/gso \
   --instance-id numpy__numpy-09db9c7 \
   --output-path outputs/ \
   --traj-path trajs/
 ```
-
-The first import of `mini-swe-agent` prints a startup banner and writes a config file under the OS app-data directory (e.g. `~/Library/Application Support/mini-swe-agent/.env` on macOS). This is harmless. It is not related to PerfAgent's own config.
 
 Outputs, per instance:
 
@@ -163,64 +151,46 @@ Outputs, per instance:
 
 ## CLI reference
 
-`perfagent` runs exactly one benchmark instance per invocation.
-
 | Flag | Required | Meaning |
 |---|---|---|
-| `--benchmark {gso,swefficiency}` | yes | Which benchmark adapter to use. |
 | `--config-path PATH` | yes | Path to a run-config YAML (see [Configuration](#configuration)). |
-| `--instance-id STR` | one of these two | Instance to run, by id. Mutually exclusive with `--run-id`. |
-| `--run-id INT` | one of these two | Instance to run, by dataset row index (useful for array jobs). Mutually exclusive with `--instance-id`. |
+| `--instance-id STR` | one of these two | Instance to run, by instance id. Mutually exclusive with `--run-id`. |
+| `--run-id INT` | one of these two | Instance to run, by row index in the huggingface dataset (useful for slurm array jobs). Mutually exclusive with `--instance-id`. |
 | `--output-path PATH` | yes | Directory to write `<instance_id>/opt_attempts.json` into. |
 | `--traj-path PATH` | yes | Directory to write `<instance_id>/traj.json` into. |
-| `--test-db-root PATH` | no | Overrides `benchmark.test_db_root` from the config file. |
-
-(source: `src/perfagent/cli.py:20-33`)
+| `--test-db-root PATH` | yes | Benchmark subdirectory of the downloaded `test_db` artifact, e.g. `test_db/gso`. |
 
 ## Configuration
 
-A run config is a YAML file with exactly four possible top-level keys: `benchmark`, `agent`, `environment`, `model`. Any other top-level key raises a `ValueError` (`cli.py:38-43`). `benchmark` is mandatory.
+A run config is a YAML file with four possible top-level keys: `benchmark`, `agent`, `environment`, `model`. Example configs are in `configs/gso.yaml` and `configs/swefficiency.yaml` used for the paper's GPT 5.1 results.
 
 | Key | Required | Meaning |
 |---|---|---|
+| `benchmark.name` | yes | Benchmark adapter: `gso` or `swefficiency`. |
 | `benchmark.dataset` | yes | Hugging Face dataset id: `gso-bench/gso` or `swefficiency/swefficiency_lite`. |
-| `benchmark.split` | no | Dataset split, default `"test"`. |
-| `benchmark.test_db_root` | yes, unless `--test-db-root` is passed | Root directory of the `test_db` artifact. See [Test DB](#test-db-required). |
-| `agent.*` | no | Maps to `PerfAgentConfig` / mini-swe-agent's `AgentConfig`. Jinja2 templates: `system_template`, `instance_template`, `action_observation_template`, `format_error_template`, `runtime_error_template`, `test_script_perf_template`, `perf_summary_template`, `duplicate_submission_template`. Plus `step_limit`, `cost_limit`, `max_attempts` (default 5). `action_regex`, `build_command` (default `/build.sh`), `test_command` (default `/run_tests.sh`), `profile_command`, `reference_profile_command`, and `workload_script` are defaulted in code and rarely need overriding. |
-| `environment.env` | no | Dict merged into the container's environment. |
-| `environment.timeout` | no | Command timeout in seconds, default 7200 (`spec.py:42`). Any key under `environment` other than `env`/`timeout` raises a `ValueError` (`workspace.py:34-35`). |
-| `model.model_class` / `model.model_name` / `model.model_kwargs` | no | Passed to `minisweagent.models.get_model`. |
+| `agent.*` | no | Maps to `PerfAgentConfig` / mini-swe-agent's `AgentConfig`. Contains standard templates used when running the agent, along with options to configure the cost/step limit for each run. |
+| `model.extra_tools` | no | Additional tools besides `bash` the model can use. Right now only `[str_replace_editor]` is supported, which was used when running PerfAgent on Kimi-K2. See [The str_replace_editor tool](#the-str_replace_editor-tool). |
 
-`configs/gso.yaml` and `configs/swefficiency.yaml` are the exact configs used for the paper's PerfAgent (GPT-5.1) results.
+For example, the benchmark block in `configs/gso.yaml` is:
 
-### Environment variables
-
-| Variable | Required | Notes |
-|---|---|---|
-| `HF_TOKEN` | Yes, for every run, on both benchmarks. | `cli.py:49` exits with status 1 if this is unset, whichever instance you run. The token is forwarded into the container (`spec.py:39`), where the workload script uses it. Only 7 of the 202 tasks actually need it. See [Which instances need `HF_TOKEN`](#which-instances-need-hf_token) below. Export a token even for a run that never contacts Hugging Face. |
-| `OPENAI_API_KEY` | Yes, in practice, for the shipped configs. Not currently checked at startup. | The shipped configs set `model.model_name` to `openai/gpt-5.1-2025-11-13`. `src/perfagent/model.py:9-42` (`PerfLitellmModel`, a `LitellmModel` subclass from mini-swe-agent) calls `litellm.completion()`. litellm resolves the `openai/` prefix by reading `OPENAI_API_KEY` from the environment. Without it, the run passes the `HF_TOKEN` check and then fails with a litellm `AuthenticationError`. To use a different provider, edit `model.model_name` in the YAML to any [litellm-supported model id](https://docs.litellm.ai/docs/providers) and set that provider's key env var instead. There is no CLI flag for model selection. |
-
-#### Which instances need `HF_TOKEN`
-
-The token is needed **inside the container**, not on the host. It is used when a task's workload script (`src/perfagent/assets/gso/workloads/<instance_id>/perf_script.py`) downloads a model or dataset before timing starts. Seven GSO tasks do this. No SWE-fficiency task does.
-
-| Instance | Downloads |
-|---|---|
-| `abetlen__llama-cpp-python-218d361` | `Qwen/Qwen2-7B-Instruct-GGUF` (`qwen2-7b-instruct-q4_0.gguf`, a multi-GB model file) |
-| `abetlen__llama-cpp-python-2bc1d97` | The same Qwen2 GGUF model file |
-| `huggingface__datasets-c5464b3` | `stanfordnlp/imdb`, streamed |
-| `huggingface__datasets-ef3b5dd` | `glue` / `sst2` builder metadata |
-| `huggingface__tokenizers-bfd9cde` | `wikitext-103-raw-v1` plus the `bert-base-uncased` tokenizer |
-| `huggingface__transformers-211f93a` | The `openai/whisper-tiny` tokenizer |
-| `huggingface__transformers-d51b589` | The `xlnet-base-cased` model and tokenizer |
-
-All seven download **public** assets, so none of them is gated behind an access request. A token still matters, because Hugging Face rate-limits anonymous downloads more aggressively. The harness re-runs the workload many times per task, so an unauthenticated pull is likely to be throttled.
-
-The remaining 195 tasks never contact Hugging Face, but `cli.py:49` still refuses to start without the variable. Set it to any valid token. Making this gate conditional is tracked in `TODOs.md`.
+```yaml
+benchmark:
+  name: gso
+  dataset: gso-bench/gso
+```
 
 ### Cost and step limits
 
-Runs cost real money. The shipped configs set `agent.cost_limit: 5.0` (USD per task) and `agent.step_limit: 200`.
+The configs set `agent.cost_limit: 5.0` (USD per task) and `agent.step_limit: 200`.
+
+### The str_replace_editor tool
+
+By default the model has one tool, `bash`, which is how mini-swe-agent works. The paper's Kimi-K2 runs added the OpenHands-style `str_replace_editor` tool (`view`, `create`, `str_replace`, `insert`, `undo_edit`), because we found that Kimi-K2 struggled with editing files through baseh. Enable it by adding this to the config:
+
+```yaml
+model:
+  extra_tools: [str_replace_editor]
+```
 
 ## Test DB (required)
 
@@ -235,117 +205,64 @@ Download it with the `hf` CLI, which `uv sync` installs into the project environ
 
 ```bash
 uv run hf download ryandeng/perfagent-test-db --repo-type dataset --local-dir test_db
-# one benchmark only:
-uv run hf download ryandeng/perfagent-test-db --repo-type dataset --local-dir test_db --include "gso/*"
 ```
 
-This creates `test_db/gso/<instance_id>/...` and `test_db/swefficiency/<instance_id>/...`. Point the harness at the **benchmark subdirectory**, not the dataset root:
+This creates `test_db/gso/<instance_id>/...` and `test_db/swefficiency/<instance_id>/...`. Point the harness at the **benchmark subdirectory** with the required CLI flag: `--test-db-root test_db/gso` or `--test-db-root test_db/swefficiency`.
 
-- on the command line with `--test-db-root test_db/gso` (or `test_db/swefficiency`), which takes precedence over the config, or
-- in the config, by setting `benchmark.test_db_root`. The shipped configs still carry the original authors' local paths (`configs/gso.yaml:4`, `configs/swefficiency.yaml:4`); replace them with `test_db/gso` and `test_db/swefficiency`.
-
-### Required layout
-
-`test_db_root` must contain, per instance:
-
-```
-<test_db_root>/<instance_id>/stable_suite.tar.gz   # both benchmarks
-<test_db_root>/<instance_id>/.testmondata          # SWE-fficiency only
-```
-
-- `stable_suite.tar.gz` must contain the member `stable_suite/excluded_collectors.txt`, a list of collector paths turned into `--ignore=` pytest arguments. This member may be absent. The harness also unpacks the whole archive to `/stable_suite` inside the container (`workspace.py:73-76`) and passes `EXCLUDED_NODEIDS_FILE=/stable_suite/excluded_nodeids.txt` to the pytest invocation.
-- `.testmondata` is required for SWE-fficiency only (`adapters/swefficiency.py:86-90`). GSO generates its testmon database fresh inside the container via `TESTMON_DATAFILE` (`adapters/gso.py:289`).
-
-The harness reads this layout in `src/perfagent/adapters/gso.py:213-217`, `src/perfagent/adapters/swefficiency.py:81-95`, and `src/perfagent/pytest_cmd.py:91-101,185,232`.
+The test_db contains information on the set of tests to include/exclude when validating the agent's patch, and is copied to the docker container at runtime. Tests are excluded if they are flaky or run for a unusually long time. This list may not be comprehensive and flaky tests may still remain, which is something to look out for when running PerfAgent. Right now, all tests are run with a single worker to minimize the occurrence of flaky tests.
 
 ## Docker images
 
-Images are pulled anonymously from Docker Hub at `ryandeng1/perfagent:{benchmark}.{instance_id}`, where `benchmark` is `gso` or `swefficiency` and `instance_id` is the specific task id. Each benchmark task has its own image (102 for GSO, 100 for SWE-fficiency-Lite), pulled the first time that instance is run.
+Images are pulled from Docker Hub at `ryandeng1/perfagent:{benchmark}.{instance_id}`, where `benchmark` is `gso` or `swefficiency` and `instance_id` is the specific task id. Each benchmark task has its own image (102 for GSO, 100 for SWE-fficiency-Lite).
+
+### Patched py-spy
+Right now the docker images built py-spy 0.4.1 by default. There is ongoing work fixing some of the issues with py-spy on GSO and SWE-fficiency and integrating it within the docker images.
+
+For now, set `environment.pyspy: image` in the run config to use the image's py-spy which works fine for most benchmark tasks.
+
+### Profiling loop
+
+`src/perfagent/assets/{gso,swefficiency}/workloads/`  contains the scripts used to evaluate the agent's patch. Every `perf_script.py` uses roughly the same `timeit.template`. It times one call of `experiment()` on the data `setup()` produced, and then keeps calling `experiment()` on that same data for 10 seconds by default so that py-spy has enough samples.
+
+For some instances, the `experiment()` function is not idempotent, so `setup()` has to be called every time in the timing loop as well. For some of these instances, the time it takes to run `setup()` far exceeds the time it takes to run the workload, and profiling for 10 seconds doesn't produce enough samples. Therefore, for those instances, we profile for a little bit longer (currently set to 30 seconds).
+
+From the script, it's important to note that the reported timing is the *first* run only, not an average over the profiling loop's repeated executions. This is meant to discourage the agent from caching results across timing iterations, which would lower the average runtime. In one ablation, this change dropped flagged reward hacks from 18 to 3.
+
 
 ## Code layout
 
-- `src/perfagent/adapters/`: benchmark-specific code that builds the `HarnessSpec` for each instance (build script, test script, files to copy, profiler variant).
-- `src/perfagent/workspace.py`: pulls the Docker image and materializes the container (copies build/test/profiler/workload scripts, extracts the stable test suite, seeds testmon data).
-- `src/perfagent/environment.py` (`PerfDockerEnvironment`): mini-swe-agent's Docker environment plus what the harness needs on top of it: a command prefix applied to every command (GSO activates the testbed venv this way) and a `docker cp` helper used by `workspace.py`.
-- `src/perfagent/agent.py` (`PerfAgent`): the agent loop, built on [`mini-swe-agent`](https://github.com/SWE-agent/mini-swe-agent), implementing the STOP interception and best-patch selection described above.
-- `src/perfagent/model.py` (`PerfLitellmModel`): thin litellm wrapper used for both the agent's tool-calling queries and the plain-text profiler-summary queries.
-- `src/perfagent/repo_config.py`: resolves per-benchmark assets through `importlib.resources`, not through a path relative to the current working directory. The harness therefore runs from any directory. It also runs from an installed package, not only from a checkout.
-- `src/perfagent/assets/{gso,swefficiency}/`: workload scripts, pytest configs, profiler wrappers, and repo-specific patch scripts, one `workloads/<instance_id>/perf_script.py` per task.
+- `src/perfagent/adapters/`: benchmark-specific code that builds the `HarnessSpec` for each instance. The benchmark-specific adapters produce the build script, test script etc. for the tasks in a particular benchmark. A lot of the code which is taken from the [`GSO`](https://github.com/gso-bench/gso) and [`SWE-fficiency`](https://github.com/swefficiency/swefficiency) repositories.
+- `src/perfagent/workspace.py`: pulls the Docker image and starts the container (installs the relevant packages, copies build/test/profiler/workload scripts, extracts the stable test suite, seeds testmon data).
+- `src/perfagent/pyspy.py` and `src/perfagent/assets/pyspy/`: the py-spy patch and the script that builds and installs it inside each task container. See [Patched py-spy](#patched-py-spy). Currently, this is still a work in progress.
+- `src/perfagent/environment.py` (`PerfDockerEnvironment`): mini-swe-agent's Docker environment with some added options to make it work with GSO and SWE-fficiency.
+- `src/perfagent/agent.py` (`PerfAgent`): the agent loop, built on [`mini-swe-agent`](https://github.com/SWE-agent/mini-swe-agent).
+- `src/perfagent/tools/` and `src/perfagent/assets/tools/`: extra tools the model can call besides bash. Right now `str_replace_editor` is the only tool supported. See [The str_replace_editor tool](#the-str_replace_editor-tool).
+- `src/perfagent/model.py` (`PerfLitellmModel`): thin litellm wrapper to allow for raw LLM queries (without tool calls) used to summarize profiler output.
 
 ## artifacts/
 
-Outputs released with the paper, not something the harness regenerates locally:
-
-- `artifacts/predictions/gso.jsonl`, `artifacts/predictions/swefficiency.jsonl`: the model's patches for every task (`model_name_or_path: gpt-5.1`), one JSON object per line, 102 and 100 lines respectively.
-- `artifacts/reports/gso_report.json`, `artifacts/reports/swefficiency.csv`: per-task correctness and speedup results underlying the tables above.
-- `artifacts/reports/gso_hack_detection.json`, `artifacts/reports/swefficiency_hack_detection.json`: per-task output of the reward-hacking detector used for the Hack-Adj. column.
-- `artifacts/trajectories/gso/{instance_id}/traj.json`, `artifacts/trajectories/swefficiency/{instance_id}/traj.json`: trajectories for each instance id in each benchmark for GPT 5.1.
+- `artifacts/predictions/gso.jsonl`, `artifacts/predictions/swefficiency.jsonl`: the model's patches for every task for GPT 5.1.
+- `artifacts/reports/gso_report.json`, `artifacts/reports/swefficiency.csv`: per-task correctness and speedup results obtained by running the benchmark eval.
+- `artifacts/reports/gso_hack_detection.json`, `artifacts/reports/swefficiency_hack_detection.json`: per-task output of the reward-hacking detector. The hack-detector combines the methods of GSO and SWE-fficiency.
 
 ## Reproducing the paper
 
-The paper evaluates two models: GPT-5.1 at high reasoning effort, and Kimi-K2 as the open-source model (K2-0711 on GSO, K2-0905 on SWE-fficiency-Lite). Both run on Mini-SWE-Agent. For Kimi-K2, the paper adds an OpenHands-style structured file-editing tool (`str_replace_editor`), because open-source models struggle to edit files reliably through raw bash. This repository ships the **GPT-5.1 configs only** (`configs/gso.yaml`, `configs/swefficiency.yaml`). The Kimi-K2 variant with the editing tool is not included here (tracked in `TODOs.md`).
+The paper evaluates two models: GPT-5.1 at high reasoning effort, and Kimi-K2 as the open-source model (K2-0711 on GSO, K2-0905 on SWE-fficiency-Lite). For Kimi-K2, the paper adds an structured file-editing tool (`str_replace_editor`) taken from OpenHands, because the open-source models we tested on struggled to edit files reliably through raw bash.
 
-Controller settings: `theta = 5` loop iterations, `$5` max cost per task, 200 step limit.
+Controller settings: `theta = 5` loop iterations, `$5` max cost per task, `200` step limit.
 
-Hardware: agents ran on an AWS EC2 `c6i.8xlarge` (32 CPU, 64 GB RAM). Benchmark evaluation was run on an `m8i.16xlarge` (64 CPU, 256 GB RAM), matching GSO's and SWE-fficiency's own evaluation setups. Timing results are hardware-sensitive. Reproducing the paper's speedup numbers needs comparable dedicated hardware.
+Hardware: agents ran on an AWS EC2 `c6i.8xlarge` (32 CPU, 64 GB RAM). Benchmark evaluation was run on an `m8i.16xlarge` (64 CPU, 256 GB RAM), matching GSO's and SWE-fficiency's own evaluation setups. Timing results are hardware-sensitive and there can be some small variance between different evaluation runs.
 
 ## FAQ / troubleshooting
 
-**I get `HF_TOKEN is not set` and I'm running SWE-fficiency, which doesn't use Hugging Face. Why do I need it?**
-Export the token anyway: `export HF_TOKEN=...`. `cli.py:49` checks for the variable before it looks at which instance you asked for, so the check cannot tell whether your run needs it. Only 7 of the 202 tasks do, all of them on GSO. They download a model or dataset inside the container before timing starts. See [Which instances need `HF_TOKEN`](#which-instances-need-hf_token) for the list. Narrowing this gate is tracked in `TODOs.md`.
-
-**I get a litellm `AuthenticationError`.**
-Set the API key for whatever provider `model.model_name` in your config points to. For the shipped configs (`openai/gpt-5.1-2025-11-13`), export `OPENAI_API_KEY`. To use a different provider, edit `model.model_name` in the YAML to any [litellm-supported model id](https://docs.litellm.ai/docs/providers) and export that provider's key env var instead. There is no CLI flag for model selection.
-
-**I get `FileNotFoundError: missing stable suite artifact ... /home/ubuntu/...`.**
-`benchmark.test_db_root` still points at the original authors' path. Download the `test_db` dataset and point the harness at the benchmark subdirectory with `--test-db-root test_db/gso` (or `test_db/swefficiency`), or set `benchmark.test_db_root` in your config. See [Test DB](#test-db-required).
-
-**How do I use a different LLM?**
-Edit `model.model_name` in your config YAML to any [litellm-supported model id](https://docs.litellm.ai/docs/providers), and set that provider's API key environment variable. There is no `--model` CLI flag.
+**How do I use a different LLM as the agent?**
+Edit `model.model_name` in your config YAML to any [litellm-supported model id](https://docs.litellm.ai/docs/providers), and set that provider's API key environment variable.
 
 **How much does a run cost, and how do I cap it?**
-Set `agent.cost_limit` (USD), `agent.step_limit`, and `agent.max_attempts` in your config. The shipped configs use `cost_limit: 5.0`, `step_limit: 200`, `max_attempts: 5`.
+Set `agent.cost_limit` (USD), `agent.step_limit`, and `agent.max_attempts` in your config. The default configs use `cost_limit: 5.0`, `step_limit: 200`, `max_attempts: 5`. If the agent runs out of cost before running the full 5 attempts, the previous attempts will be stored.
 
 **I get a Docker permission or capability error mentioning `SYS_PTRACE`, `LINUX_IMMUTABLE`, or `seccomp`.**
-Task containers require `--cap-add=SYS_PTRACE --cap-add=LINUX_IMMUTABLE --security-opt=seccomp=unconfined` (`spec.py:6-11`). Rootless Docker and many CI runners refuse to grant these. Run on a host with a standard root-mode Docker daemon.
-
-**Why is my speedup different from the paper's numbers?**
-Three likely causes:
-
-1. Different hardware. See [Reproducing the paper](#reproducing-the-paper).
-2. Timing measures the first run only, not an average. A single run carries more noise than an averaged benchmark would.
-3. Model nondeterminism. The agent's edits are not identical from run to run.
-
-**How do I run all instances instead of one?**
-`perfagent` takes exactly one instance per invocation, via `--instance-id` or `--run-id`. Loop externally, for example over dataset row indices:
-
-```bash
-for i in $(seq 0 101); do
-  uv run perfagent \
-    --benchmark gso \
-    --config-path configs/gso.yaml \
-    --run-id "$i" \
-    --output-path outputs/ \
-    --traj-path trajs/
-done
-```
-
-Runs are independent, so you can parallelize this loop across processes or machines. Running many instances on the same host at once creates CPU contention, which affects timing measurements. Avoid heavy parallelism on a single machine if accurate speedups matter to you.
-
-**What do the files in `artifacts/` contain?**
-See [artifacts/](#artifacts) above for the paper's released model patches, correctness and speedup reports, and reward-hacking detection results.
-
-**How do I add a new benchmark?**
-1. Write an adapter class under `src/perfagent/adapters/<name>.py` that subclasses `BenchmarkAdapter` (`src/perfagent/adapters/base.py`) and implements `build_spec()`, returning a `HarnessSpec`.
-2. Register it in `src/perfagent/adapters/__init__.py`, in `get_adapter()`.
-3. Add assets under `src/perfagent/assets/<name>/` (workload scripts under `workloads/<instance_id>/perf_script.py`, plus a `repo_config.yaml` and whatever pytest/profiler scripts your adapter references), resolved at runtime through `perfagent.repo_config.assets_root()`.
-
-**Where does the profiler run?**
-Inside the Docker container, as part of the task image. Do not install `py-spy` on the host. It is not used there.
-
-## License
-
-> **TODO(maintainers):** no license is chosen yet. This repository ships without a `LICENSE` file. Until one is added, others have no legal right to use, modify, or redistribute this code. Tracked in `TODOs.md`.
+Task containers require `--cap-add=SYS_PTRACE --cap-add=LINUX_IMMUTABLE --security-opt=seccomp=unconfined`. This may require a root docker installation.
 
 ## Citation
 
@@ -363,4 +280,4 @@ If you find this work useful, please cite the PerfAgent paper:
 }
 ```
 
-This harness builds on [`mini-swe-agent`](https://github.com/SWE-agent/mini-swe-agent) and evaluates on [GSO](https://github.com/gso-bench/gso) and [SWE-fficiency](https://github.com/swefficiency/swefficiency).
+This harness builds on [`mini-swe-agent`](https://github.com/SWE-agent/mini-swe-agent) and evaluates on [GSO](https://gso-bench.github.io/) and [SWE-fficiency](https://swefficiency.com/).

@@ -1,7 +1,6 @@
 benchmark:
+  name: swefficiency
   dataset: swefficiency/swefficiency_lite
-  split: test
-  test_db_root: /home/ubuntu/profiling_agent/swefficiency/test_db/new_test_db
 
 agent:
   system_template: |
