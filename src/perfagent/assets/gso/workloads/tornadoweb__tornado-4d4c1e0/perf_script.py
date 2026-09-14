@@ -15,6 +15,11 @@ def experiment(futures):
     for future in futures:
         future.set_exception(error)
     result_summary = {'num_futures': len(futures), 'exception_type': type(futures[0].exception()).__name__ if futures else None, 'exception_message': str(futures[0].exception()) if futures else None}
+    # Mark every exception as retrieved. Otherwise each Future.__del__ formats and logs the
+    # traceback when the list is freed on return, outside experiment(), and that logging is
+    # ~95% of the profiled run (perfagent README, "Profiling loop").
+    for future in futures:
+        future.exception()
     return result_summary
 
 def store_result(result, filename):

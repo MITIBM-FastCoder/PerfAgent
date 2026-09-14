@@ -6,6 +6,7 @@ import tempfile
 import docker
 from rich.console import Console
 
+from perfagent import pyspy
 from perfagent.environment import PerfDockerEnvironment
 from perfagent.spec import HarnessSpec
 
@@ -31,8 +32,11 @@ def materialize(spec: HarnessSpec, environment_config: dict | None = None) -> Pe
 
     yaml_env = environment_config.pop("env", {})
     timeout = environment_config.pop("timeout", spec.exec_timeout)
+    pyspy_mode = environment_config.pop("pyspy", "patched")
     if environment_config:
         raise ValueError(f"unknown environment config keys: {sorted(environment_config)}")
+    if pyspy_mode not in ("patched", "image"):
+        raise ValueError(f"environment.pyspy must be 'patched' or 'image', got {pyspy_mode!r}")
 
     env = PerfDockerEnvironment(
         image=spec.image,
@@ -42,6 +46,11 @@ def materialize(spec: HarnessSpec, environment_config: dict | None = None) -> Pe
         timeout=timeout,
         env={**yaml_env, **spec.env},
     )
+
+    if pyspy_mode == "patched":
+        # See perfagent.pyspy for why the image's own py-spy is not used.
+        console.print(f"building patched py-spy {pyspy.PYSPY_VERSION} in the container", style="bright_cyan")
+        pyspy.install(env)
 
     for file in spec.files:
         env.copy_to_container(src=str(file.src), dest=file.dest)

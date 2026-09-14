@@ -30,8 +30,10 @@ def check_equivalence(reference, current):
     assert reference['columns_200_300_400'] == current[[200, 300, 400]].values.tolist()
 
 def run_test(eqcheck: bool=False, reference: bool=False, prefix: str='') -> float:
-    df = setup()
-    execution_time, result = timeit.timeit(lambda: experiment(df), number=1)
+    _state = {}
+    def _fresh_setup():
+        _state["df"] = setup()
+    execution_time, result = timeit.timeit(lambda: experiment(_state["df"]), setup=_fresh_setup, number=1)
     if reference:
         store_result(result, f'{prefix}_result.json')
     if eqcheck:
@@ -49,13 +51,15 @@ def inner(_it, _timer{init}):
     _t1 = _timer()
 
     _first_time = _t1 - _t0
-    return _first_time, retval
 
     if _first_time >= _profile_duration:
         return _first_time, retval
 
+    # experiment() is not idempotent for this workload (see perfagent README, "Profiling loop"):
+    # rebuild its input before every repeat so the profile matches the timed first call.
     _profile_start = _timer()
     while _timer() - _profile_start < _profile_duration:
+        {setup}
         retval = {stmt}
 
     return _first_time, retval

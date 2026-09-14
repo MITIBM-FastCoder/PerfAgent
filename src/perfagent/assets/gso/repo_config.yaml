@@ -130,12 +130,12 @@ instance_overrides:
       - [tzdata]
     pandas-dev__pandas-191557d:
       - [tzdata]
-  # Replaces the hardcoded instance-ID list in the old runner's profiler
-  # variant selection (repo-level llama/rust variants live under repos.*).
-  profiler_variant:
-    huggingface__datasets-c5464b3: no_native
-    huggingface__tokenizers-bfd9cde: no_native
-    huggingface__datasets-ef3b5dd: no_native
+  # Per-instance profiler variant (repo-level llama/rust variants live under repos.*).
+  # The old runner pinned huggingface__datasets-c5464b3, huggingface__datasets-ef3b5dd and
+  # huggingface__tokenizers-bfd9cde to no_native because py-spy --native lost ~93% of their
+  # samples ("failed to get os threadid" on Python 3.9). The patched py-spy the harness now
+  # installs (perfagent/pyspy.py) fixes that, so they profile natively like every other task.
+  profiler_variant: {}
   patch_pydantic_yield_fixture:
     - pydantic__pydantic-4a09447
   extra_deselects:

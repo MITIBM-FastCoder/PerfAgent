@@ -116,14 +116,22 @@ def _is_repo_native_so(filename: str | None) -> bool:
 # Rust crate path → .rs source file mapping
 # ---------------------------------------------------------------------------
 
-def _rust_crate_path_to_source(crate_path_segments: list[str]) -> str | None:
-    """Map Rust module segments (after crate name) to a ``.rs`` source file."""
+def _rust_crate_path_to_source(
+    crate_path_segments: list[str], filename_hint: str | None = None
+) -> str | None:
+    """Map Rust module segments (after crate name) to a ``.rs`` source file.
+
+    The core crate and the Python bindings crate are both ``tokenizers`` in symbol names, so a
+    path can match a file in either. When py-spy reported a source basename for the frame
+    (``filename_hint``), the candidate with that basename wins; otherwise the first match does.
+    """
     repo_files = _repo_source_file_set()
     crate_names = _repo_native_crate_names()
 
-    roots: list[str] = [f"{cn}/src" for cn in crate_names]
+    roots: list[str] = [f"{cn}/src" for cn in sorted(crate_names)]
     roots.append("bindings/python/src")
 
+    candidates: list[str] = []
     for root in roots:
         for i in range(len(crate_path_segments), 0, -1):
             seg = crate_path_segments[:i]
@@ -131,9 +139,16 @@ def _rust_crate_path_to_source(crate_path_segments: list[str]) -> str | None:
                 f"{root}/{'/'.join(seg)}.rs",
                 f"{root}/{'/'.join(seg)}/mod.rs",
             ):
-                if candidate in repo_files:
-                    return candidate
-    return None
+                if candidate in repo_files and candidate not in candidates:
+                    candidates.append(candidate)
+    if not candidates:
+        return None
+    if filename_hint:
+        basename = filename_hint.rsplit("/", 1)[-1]
+        for candidate in candidates:
+            if candidate.rsplit("/", 1)[-1] == basename:
+                return candidate
+    return candidates[0]
 
 
 def _resolve_frame(frame: Frame, crate_names: frozenset[str]) -> Frame:
@@ -147,7 +162,7 @@ def _resolve_frame(frame: Frame, crate_names: frozenset[str]) -> Frame:
         method = impl_match.group(3)
         impl_parts = impl_type.split("::")
         if impl_parts[0] in crate_names:
-            source = _rust_crate_path_to_source(impl_parts[1:])
+            source = _rust_crate_path_to_source(impl_parts[1:], frame.filename)
             type_name = impl_parts[-1] if impl_parts else impl_type
             return Frame(
                 function=f"{type_name}::{method}",
@@ -162,7 +177,7 @@ def _resolve_frame(frame: Frame, crate_names: frozenset[str]) -> Frame:
     if first_seg not in crate_names:
         return frame
 
-    source = _rust_crate_path_to_source(parts[1:])
+    source = _rust_crate_path_to_source(parts[1:], frame.filename)
     if len(parts) >= 3:
         clean_fn = "::".join(parts[-2:])
     elif len(parts) == 2:
@@ -204,10 +219,11 @@ class RustAwareFoldedStacksProfile(FoldedStacksProfile):
         return RustAwareFoldedStacksProfile(filtered)
 
     def resolve_native_repo_frames(self) -> RustAwareFoldedStacksProfile:
-        """Rewrite frames from repo native .so files.
+        """Rewrite frames from the repo's native code.
 
         * Demangles Rust symbols.
-        * Resolves repo-crate functions to .rs source files.
+        * Resolves repo-crate functions to .rs source files, both for frames py-spy could only
+          attribute to the .so and for frames it symbolized to a bare source basename.
         * Leaves dependency crate frames (alloc, core, pyo3, …) unchanged.
         """
         crate_names = _repo_native_crate_names()
@@ -218,14 +234,17 @@ class RustAwareFoldedStacksProfile(FoldedStacksProfile):
         for stack in self.stacks:
             new_frames: list[Frame] = []
             for frame in stack.frames:
-                if not (
-                    frame.filename
-                    and frame.filename.endswith(".so")
-                    and _is_repo_native_so(frame.filename)
-                ):
+                filename = frame.filename or ""
+                if filename.endswith(".so") and _is_repo_native_so(filename):
+                    new_frames.append(_resolve_frame(frame, crate_names))
+                elif filename.endswith(".rs"):
+                    # py-spy symbolized the frame from debug info and reports only the source
+                    # basename. Resolve it through the crate path so bindings/python/src/encoding.rs
+                    # is not lost among the other encoding.rs files in the repo; frames from other
+                    # crates (pyo3, core, std) come back unchanged.
+                    new_frames.append(_resolve_frame(frame, crate_names))
+                else:
                     new_frames.append(frame)
-                    continue
-                new_frames.append(_resolve_frame(frame, crate_names))
             resolved.append(StackTrace(frames=tuple(new_frames), count=stack.count))
 
         return RustAwareFoldedStacksProfile(resolved)
@@ -328,8 +347,9 @@ if __name__ == "__main__":
 
     profile = RustAwareFoldedStacksProfile.load(args.profile)
     profile = profile.resolve_native_repo_frames()
+    # Everything under experiment() is measured time, including a setup() the workload calls from
+    # inside it, so nothing below experiment() is excluded.
     profile = profile.filter_under_function("experiment")
-    profile = profile.exclude_under_function("setup")
 
     report = profile.to_json(
         top_n=args.top,

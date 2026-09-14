@@ -29,8 +29,10 @@ def check_equivalence(reference_result, current_result):
     assert reference_result.name == current_result.name, 'Names do not match'
 
 def run_test(eqcheck: bool=False, reference: bool=False, prefix: str='') -> float:
-    range_index, indices = setup()
-    execution_time, result = timeit.timeit(lambda: experiment(range_index, indices), number=1)
+    _state = {}
+    def _fresh_setup():
+        _state["range_index"], _state["indices"] = setup()
+    execution_time, result = timeit.timeit(lambda: experiment(_state["range_index"], _state["indices"]), setup=_fresh_setup, number=1)
     if reference:
         store_result(result, f'{prefix}_result.json')
     if eqcheck:
@@ -52,8 +54,11 @@ def inner(_it, _timer{init}):
     if _first_time >= _profile_duration:
         return _first_time, retval
 
+    # experiment() is not idempotent for this workload (see perfagent README, "Profiling loop"):
+    # rebuild its input before every repeat so the profile matches the timed first call.
     _profile_start = _timer()
     while _timer() - _profile_start < _profile_duration:
+        {setup}
         retval = {stmt}
 
     return _first_time, retval

@@ -67,8 +67,10 @@ def check_equivalence(reference_result: dict, current_result: dict):
         assert ref_val == cur_val, f"Equivalence check failed for key '{key}': {ref_val} != {cur_val}"
 
 def run_test(eqcheck: bool=False, reference: bool=False, prefix: str='') -> float:
-    indexes = setup()
-    execution_time, result = timeit.timeit(lambda: experiment(indexes), number=1)
+    _state = {}
+    def _fresh_setup():
+        _state["indexes"] = setup()
+    execution_time, result = timeit.timeit(lambda: experiment(_state["indexes"]), setup=_fresh_setup, number=1)
     filename = f'{prefix}_result.json' if prefix else 'reference_result.json'
     if reference:
         store_result(result, filename)
@@ -91,8 +93,11 @@ def inner(_it, _timer{init}):
     if _first_time >= _profile_duration:
         return _first_time, retval
 
+    # experiment() is not idempotent for this workload (see perfagent README, "Profiling loop"):
+    # rebuild its input before every repeat so the profile matches the timed first call.
     _profile_start = _timer()
     while _timer() - _profile_start < _profile_duration:
+        {setup}
         retval = {stmt}
 
     return _first_time, retval

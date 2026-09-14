@@ -108,6 +108,20 @@ def _capture_process_maps(
         Path(output_path).write_text(latest_maps)
 
 
+def save_pyspy_log(result) -> None:
+    """Keep py-spy's own messages when PYSPY_LOG_FILE is set (tools/profiler_smoke.py does this,
+    together with RUST_LOG=warn, to see how many samples py-spy dropped and why). Never set during
+    agent runs."""
+    log_file = os.environ.get("PYSPY_LOG_FILE")
+    if log_file:
+        with open(log_file, "w") as f:
+            f.write(result.stdout + result.stderr)
+
+def strip_pyspy_lines(text: str) -> str:
+    """Drop py-spy's own chatter ("py-spy> ...") from the parser output. Every report line is kept,
+    including function names that happen to contain "Error"."""
+    return "\n".join(line for line in text.splitlines() if "py-spy>" not in line)
+
 def _profile_by_pid(
     prob_script: str,
     no_eqcheck: bool = False,
@@ -138,6 +152,7 @@ def _profile_by_pid(
                 "py-spy",
                 "record",
                 "--native",
+                "--idle",  # keep the main thread while it waits on ggml's worker threads, which py-spy cannot see
                 "-f",
                 "raw",
                 "-o",
@@ -150,6 +165,7 @@ def _profile_by_pid(
             text=True,
         )
         child_returncode = child.wait()
+    save_pyspy_log(profile_result)
 
     return (
         profile_result,
@@ -189,12 +205,7 @@ def profile_prob_script(prob_script: str, no_eqcheck: bool = False) -> str:
     result = subprocess.run(shlex.split(parse_profile_cmd), cwd="/", capture_output=True, text=True)
     assert result.returncode == 0, f"parsing profile should never fail. stdout: {result.stdout}\nstderr: {result.stderr}"
 
-    filtered_lines = []
-    for line in result.stdout.splitlines():
-        if "py-spy>" in line or "Error" in line:
-            continue
-        filtered_lines.append(line)
-    return "\n".join(filtered_lines)
+    return strip_pyspy_lines(result.stdout)
 
 
 def main():

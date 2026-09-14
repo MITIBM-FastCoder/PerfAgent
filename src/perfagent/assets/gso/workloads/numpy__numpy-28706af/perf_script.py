@@ -29,9 +29,10 @@ def check_equivalence(reference_result, current_result):
         raise AssertionError('Numerical values of the arrays differ beyond acceptable tolerance.')
 
 def run_test(eqcheck: bool=False, reference: bool=False, prefix: str='') -> float:
-    workload = setup()
-    stmt = lambda: experiment(workload)
-    execution_time, result = timeit.timeit(stmt, number=1000)
+    _state = {}
+    def _fresh_setup():
+        _state["workload"] = setup()
+    execution_time, result = timeit.timeit(lambda: experiment(_state["workload"]), setup=_fresh_setup, number=1)
     filename = f'{prefix}_result.npy' if prefix else 'reference_result.npy'
     if reference:
         store_result(result, filename)
@@ -43,14 +44,25 @@ def run_test(eqcheck: bool=False, reference: bool=False, prefix: str='') -> floa
 timeit.template = """
 def inner(_it, _timer{init}):
     {setup}
+    _profile_duration = 60.0
+
     _t0 = _timer()
     retval = {stmt}
     _t1 = _timer()
 
-    for _ in (_it):
-        new_retval = {stmt}
-    
-    return (_t1 - _t0), retval
+    _first_time = _t1 - _t0
+
+    if _first_time >= _profile_duration:
+        return _first_time, retval
+
+    # experiment() is not idempotent for this workload (see perfagent README, "Profiling loop"):
+    # rebuild its input before every repeat so the profile matches the timed first call.
+    _profile_start = _timer()
+    while _timer() - _profile_start < _profile_duration:
+        {setup}
+        retval = {stmt}
+
+    return _first_time, retval
 """
 
 def main():

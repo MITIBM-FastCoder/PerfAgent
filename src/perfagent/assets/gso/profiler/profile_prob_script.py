@@ -61,11 +61,29 @@ def time_prob_script(prob_script: str, no_eqcheck: bool = False, iters: int = TI
         times.append(execution_time)
     return times
 
+def save_pyspy_log(result) -> None:
+    """Keep py-spy's own messages when PYSPY_LOG_FILE is set (tools/profiler_smoke.py does this,
+    together with RUST_LOG=warn, to see how many samples py-spy dropped and why). Never set during
+    agent runs."""
+    log_file = os.environ.get("PYSPY_LOG_FILE")
+    if log_file:
+        with open(log_file, "w") as f:
+            f.write(result.stdout + result.stderr)
+
+def strip_pyspy_lines(text: str) -> str:
+    """Drop py-spy's own chatter ("py-spy> ...") from the parser output. Every report line is kept,
+    including function names that happen to contain "Error"."""
+    return "\n".join(line for line in text.splitlines() if "py-spy>" not in line)
+
 def profile_prob_script(prob_script: str, no_eqcheck: bool = False) -> str:
-    profile_cmd = f"py-spy record --native -f raw -o profile.folded -- python {prob_script}"
+    # --idle keeps samples of the main thread while it waits on work done by native helper threads
+    # (Arrow, OpenBLAS, rayon pools). py-spy cannot see those threads, and without --idle it would drop
+    # the sample entirely, so the wall time inside experiment() would go unattributed.
+    profile_cmd = f"py-spy record --native --idle -f raw -o profile.folded -- python {prob_script}"
     if no_eqcheck:
         profile_cmd += " --no-eqcheck"
     result = subprocess.run(shlex.split(profile_cmd), cwd="/", capture_output=True, text=True)
+    save_pyspy_log(result)
     if result.returncode != 0:
         if "No child processes" not in result.stdout and "No child processes" not in result.stderr:
             raise RuntimeError(f"profiler should not have errored after having already run the test script! stdout: {result.stdout}\nstderr: {result.stderr}")
@@ -80,12 +98,7 @@ def profile_prob_script(prob_script: str, no_eqcheck: bool = False) -> str:
     result = subprocess.run(shlex.split(parse_profile_cmd), cwd="/", capture_output=True, text=True)
     assert result.returncode == 0, f"parsing profile should never fail. stdout: {result.stdout}\nstderr: {result.stderr}"
 
-    filtered_lines = []
-    for line in result.stdout.splitlines():
-        if "py-spy>" in line or "Error" in line:
-            continue
-        filtered_lines.append(line)
-    return "\n".join(filtered_lines)
+    return strip_pyspy_lines(result.stdout)
 
 def main():
     import argparse

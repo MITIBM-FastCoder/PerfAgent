@@ -66,10 +66,22 @@ def run_test(eqcheck: bool=False, reference: bool=False, prefix: str='') -> floa
 timeit.template = """
 def inner(_it, _timer{init}):
     {setup}
+    _profile_duration = 10.0
+
     _t0 = _timer()
     retval = {stmt}
     _t1 = _timer()
-    return _t1 - _t0, retval
+
+    _first_time = _t1 - _t0
+
+    if _first_time >= _profile_duration:
+        return _first_time, retval
+
+    _profile_start = _timer()
+    while _timer() - _profile_start < _profile_duration:
+        retval = {stmt}
+
+    return _first_time, retval
 """
 
 def main():

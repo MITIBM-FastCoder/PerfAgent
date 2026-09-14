@@ -49,8 +49,10 @@ def check_equivalence(reference_result, current_result, tol=1e-06):
         assert math.isclose(ref_vals[1], cur_vals[1], rel_tol=tol, abs_tol=tol), f'Imaginary part of {key} not equivalent'
 
 def run_test(eqcheck: bool=False, reference: bool=False, prefix: str='') -> float:
-    data = setup()
-    exec_time, result = timeit.timeit(lambda: experiment(data), number=10000)
+    _state = {}
+    def _fresh_setup():
+        _state["data"] = setup()
+    exec_time, result = timeit.timeit(lambda: experiment(_state["data"]), setup=_fresh_setup, number=1)
     ref_filename = f'{prefix}_result.json' if prefix else 'reference_result.json'
     if reference:
         store_result(result, ref_filename)
@@ -62,14 +64,25 @@ def run_test(eqcheck: bool=False, reference: bool=False, prefix: str='') -> floa
 timeit.template = """
 def inner(_it, _timer{init}):
     {setup}
+    _profile_duration = 60.0
+
     _t0 = _timer()
     retval = {stmt}
     _t1 = _timer()
 
-    for _ in (_it):
-        new_retval = {stmt}
-    
-    return (_t1 - _t0), retval
+    _first_time = _t1 - _t0
+
+    if _first_time >= _profile_duration:
+        return _first_time, retval
+
+    # experiment() is not idempotent for this workload (see perfagent README, "Profiling loop"):
+    # rebuild its input before every repeat so the profile matches the timed first call.
+    _profile_start = _timer()
+    while _timer() - _profile_start < _profile_duration:
+        {setup}
+        retval = {stmt}
+
+    return _first_time, retval
 """
 
 def main():

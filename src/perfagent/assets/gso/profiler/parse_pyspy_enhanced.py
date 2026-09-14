@@ -11,11 +11,13 @@ import argparse
 import json
 import re
 from collections import defaultdict
+import os
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
-REPO_ROOT = "/testbed"
+# Override to run the parser outside a task container, e.g. against a checkout on the host.
+REPO_ROOT = os.environ.get("PARSE_PYSPY_REPO_ROOT", "/testbed")
 REPO_ROOT_PREFIX = f"{REPO_ROOT}/"
 REPO_ROOT_PATH = Path(REPO_ROOT)
 PACKAGE_PATH_MARKERS = (
@@ -630,8 +632,9 @@ if __name__ == "__main__":
     args = _parse_args()
 
     profile = FoldedStacksProfile.load(args.profile)
+    # Everything under experiment() is measured time, including a setup() the workload calls from
+    # inside it, so nothing below experiment() is excluded.
     profile = profile.filter_under_function("experiment")
-    profile = profile.exclude_under_function("setup")
 
     if True or args.report == "json":
         report = profile.to_json(

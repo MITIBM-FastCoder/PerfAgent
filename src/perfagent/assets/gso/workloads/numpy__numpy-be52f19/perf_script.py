@@ -37,9 +37,11 @@ def check_equivalence(reference_result, current_result):
     assert abs(curr_sum_imag - reference_result['sum_imag']) < tol, f'Imag sum mismatch: {curr_sum_imag} vs {reference_result["sum_imag"]}'
 
 def run_test(eqcheck: bool=False, reference: bool=False, prefix: str='') -> float:
-    data_setup = setup()
+    _state = {}
+    def _fresh_setup():
+        _state["data_setup"] = setup()
     number_of_runs = 1
-    execution_time, result = timeit.timeit(lambda: experiment(data_setup), number=25000)
+    execution_time, result = timeit.timeit(lambda: experiment(_state["data_setup"]), setup=_fresh_setup, number=1)
     if reference:
         store_result(result, f'{prefix}_result.json')
     if eqcheck:
@@ -50,14 +52,25 @@ def run_test(eqcheck: bool=False, reference: bool=False, prefix: str='') -> floa
 timeit.template = """
 def inner(_it, _timer{init}):
     {setup}
+    _profile_duration = 60.0
+
     _t0 = _timer()
     retval = {stmt}
     _t1 = _timer()
 
-    for _ in (_it):
-        new_retval = {stmt}
-    
-    return (_t1 - _t0), retval
+    _first_time = _t1 - _t0
+
+    if _first_time >= _profile_duration:
+        return _first_time, retval
+
+    # experiment() is not idempotent for this workload (see perfagent README, "Profiling loop"):
+    # rebuild its input before every repeat so the profile matches the timed first call.
+    _profile_start = _timer()
+    while _timer() - _profile_start < _profile_duration:
+        {setup}
+        retval = {stmt}
+
+    return _first_time, retval
 """
 
 def main():

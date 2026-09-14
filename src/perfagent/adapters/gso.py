@@ -112,16 +112,14 @@ def install_commands_debug(repo: str, install_commands: list[str]) -> list[str]:
             "uv pip install huggingface_hub hf_transfer scikit-build cmake ninja 'setuptools<82' wheel",
             'uv pip install "llama_cpp_python @ ." --reinstall',
             'export PKG_DIR="$(cd /tmp && python -c \'import pathlib, llama_cpp; print(pathlib.Path(llama_cpp.__file__).resolve().parent)\')"',
-            'export SOURCE_PKG_DIR="/testbed/llama_cpp"',
             "uv pip install requests dill datasets tiktoken transformers",
-            'cmake -S . -B build-pyspy -G Ninja -DLLAMA_BLAS=ON -DLLAMA_BLAS_VENDOR=OpenBLAS -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_FLAGS_RELWITHDEBINFO="-O2 -g -fno-omit-frame-pointer" -DCMAKE_CXX_FLAGS_RELWITHDEBINFO="-O2 -g -fno-omit-frame-pointer"',
+            'cmake -S . -B build-pyspy -G Ninja -DLLAMA_BLAS=ON -DLLAMA_BLAS_VENDOR=OpenBLAS -DSKBUILD_PLATLIB_DIR="$(dirname "$PKG_DIR")" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_FLAGS_RELWITHDEBINFO="-O2 -g -fno-omit-frame-pointer" -DCMAKE_CXX_FLAGS_RELWITHDEBINFO="-O2 -g -fno-omit-frame-pointer"',
             'cmake --build build-pyspy -j"$(nproc)"',
-            'export LIBLLAMA_PATH="$(for p in build-pyspy/vendor/llama.cpp/libllama.so build-pyspy/vendor/llama.cpp/src/libllama.so; do if [ -f "$p" ]; then printf %s "$p"; break; fi; done)"',
-            'test -n "$LIBLLAMA_PATH"',
-            'cp -f "$LIBLLAMA_PATH" "$PKG_DIR/libllama.so"',
-            'if [ -f build-pyspy/vendor/llama.cpp/examples/llava/libllava.so ]; then cp -f build-pyspy/vendor/llama.cpp/examples/llava/libllava.so "$PKG_DIR/libllava.so"; fi',
-            'cp -f "$LIBLLAMA_PATH" "$SOURCE_PKG_DIR/libllama.so"',
-            'if [ -f build-pyspy/vendor/llama.cpp/examples/llava/libllava.so ]; then cp -f build-pyspy/vendor/llama.cpp/examples/llava/libllava.so "$SOURCE_PKG_DIR/libllava.so"; fi',
+            # The project's install rules cover both package layouts (llama_cpp/ and
+            # llama_cpp/lib/), the source checkout, and dependencies such as libggml.so.
+            'cmake --install build-pyspy',
+            'export LIBLLAMA_PATH="$(cd /tmp && python -c \'import llama_cpp.llama_cpp as bindings; print(bindings._lib._name)\')"',
+            'test -f "$LIBLLAMA_PATH"',
             "uv pip show llama-cpp-python",
         ]
 
