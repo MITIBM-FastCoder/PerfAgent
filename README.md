@@ -53,7 +53,7 @@ PerfAgent wraps an off-the-shelf coding agent ([Mini-SWE-Agent](https://github.c
    The agent gets a profile of the program from the [py-spy](https://github.com/benfred/py-spy) profiler. It captures both Python and native-extension frames and produces raw stack frames. These raw stack frames are parsed using `parse_pyspy.py`, and a json output is produced. The json contains hotspots with info on location, call stack, self-time, total-time. PerfAgent then queries a LLM to summarize the output for the coding agent.
 
 2. **Objective-driven loop controller**, addresses agents terminating prematurely.
-   When the agent signals STOP (in mini-swe-agent's case the command is `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`), the harness applies the patch, rebuilds the repository, revalidates it, and profiles it again. It then reports the updated hotspots and the measured speedup, and asks the agent to continue, for up to `theta = 5` iterations. At the end, PerfAgent selects the best-performing CORRECT patch across all iterations. Note that best-performing means only on the provided workload. GSO, for example, has hidden performance tests that PerfAgent does not have access to.
+   When the agent signals STOP and submits its patch, the harness applies the patch, rebuilds the repository, revalidates it, and profiles it again. It then reports the updated hotspots and the measured speedup, and asks the agent to continue for up to `theta = 5` iterations. At the end, PerfAgent selects the best-performing and correct patch across all iterations. 
 
 3. **Selective validation**, against insufficient testing.
    [pytest-testmon](https://github.com/tarpas/pytest-testmon) runs only the tests whose coverage overlaps the agent's changes. A failing test is returned to the agent as feedback.
@@ -118,8 +118,8 @@ All numbers below are for GPT-5.1. Columns are Correctness / Sp@1 / Opt@1 / Hack
 - Python 3.12 or newer.
 - [`uv`](https://docs.astral.sh/uv/).
 - Docker. All tasks are run within a docker container.
-- Docker images pulled per instance from Docker Hub (`ryandeng1/perfagent:{benchmark}.{instance_id}`). Each task has its own image, built for that repository at that commit. Image sizes are not measured or recorded anywhere in this repository, so budget disk space conservatively before a full run. `py-spy` itself runs *inside* the container, as part of the image. Do not install `py-spy` on the host.
-- The `test_db` artifact, downloaded from the Hugging Face dataset [`ryandeng/perfagent-test-db`](https://huggingface.co/datasets/ryandeng/perfagent-test-db). See [Test DB](#test-db-required) for the download command and where to point the harness.
+- Docker images pulled per instance from Docker Hub (`ryandeng1/perfagent:{benchmark}.{instance_id}`). Each task has its own image, built for that repository at that commit.
+- The `test_db` artifact, downloaded from Hugging Face: [`ryandeng/perfagent-test-db`](https://huggingface.co/datasets/ryandeng/perfagent-test-db). See [Test DB](#test-db-required) for the download command.
 - A Hugging Face token `HF_TOKEN`, and an LLM provider key such as `OPENAI_API_KEY`.
 
 ## Install
@@ -185,12 +185,14 @@ The configs set `agent.cost_limit: 5.0` (USD per task) and `agent.step_limit: 20
 
 ### The str_replace_editor tool
 
-By default the model has one tool, `bash`, which is how mini-swe-agent works. The paper's Kimi-K2 runs added the OpenHands-style `str_replace_editor` tool (`view`, `create`, `str_replace`, `insert`, `undo_edit`), because we found that Kimi-K2 struggled with editing files through baseh. Enable it by adding this to the config:
+By default the model has one tool, `bash`, which is how mini-swe-agent works. In the paper, when evaluating Kimi-K2, we added the OpenHands-style `str_replace_editor` tool (`view`, `create`, `str_replace`, `insert`, `undo_edit`), because we found that Kimi-K2 struggled with editing files through bash. You can enable the tool by adding this to the config:
 
 ```yaml
 model:
   extra_tools: [str_replace_editor]
 ```
+
+For more modern LLMs, this tool is probably not necessary.
 
 ## Test DB (required)
 
@@ -199,7 +201,7 @@ model:
 | Benchmark | Download size |
 |---|---|
 | GSO | 29 MB |
-| SWE-fficiency-Lite | 14.5 GB, almost all of it the per-instance `.testmondata` seeds |
+| SWE-fficiency-Lite | 14.5 GB |
 
 Download it with the `hf` CLI, which `uv sync` installs into the project environment:
 
@@ -209,11 +211,11 @@ uv run hf download ryandeng/perfagent-test-db --repo-type dataset --local-dir te
 
 This creates `test_db/gso/<instance_id>/...` and `test_db/swefficiency/<instance_id>/...`. Point the harness at the **benchmark subdirectory** with the required CLI flag: `--test-db-root test_db/gso` or `--test-db-root test_db/swefficiency`.
 
-The test_db contains information on the set of tests to include/exclude when validating the agent's patch, and is copied to the docker container at runtime. Tests are excluded if they are flaky or run for a unusually long time. This list may not be comprehensive and flaky tests may still remain, which is something to look out for when running PerfAgent. Right now, all tests are run with a single worker to minimize the occurrence of flaky tests.
+The test_db contains information on the set of tests to include/exclude when validating the agent's patch, and is copied to the docker container at runtime. Tests are excluded if they are flaky or run for an unusually long time. This list may not be comprehensive and flaky tests may still remain, which is something to look out for when running PerfAgent. Right now, all tests are run with a single worker to minimize the occurrence of flaky tests.
 
 ## Docker images
 
-Images are pulled from Docker Hub at `ryandeng1/perfagent:{benchmark}.{instance_id}`, where `benchmark` is `gso` or `swefficiency` and `instance_id` is the specific task id. Each benchmark task has its own image (102 for GSO, 100 for SWE-fficiency-Lite).
+Images are pulled from Docker Hub at `ryandeng1/perfagent:{benchmark}.{instance_id}`, where `benchmark` is `gso` or `swefficiency` and `instance_id` is the specific task id. Each benchmark task has its own image (102 for GSO, 100 for SWE-fficiency-Lite). The GSO and SWE-fficiency repositories contain code on how to build the specific images for each benchmark task.
 
 ### Patched py-spy
 Right now the docker images built py-spy 0.4.1 by default. There is ongoing work fixing some of the issues with py-spy on GSO and SWE-fficiency and integrating it within the docker images.
