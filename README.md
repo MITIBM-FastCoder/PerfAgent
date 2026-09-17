@@ -147,6 +147,7 @@ uv run perfagent \
 Outputs, per instance:
 
 - `outputs/<instance_id>/opt_attempts.json`: a list of `{runtime, speedup, perf_report, diff}`, one entry per optimization attempt the agent made.
+  - PerfAgent selects the diff with the largest speedup value.
 - `trajs/<instance_id>/traj.json`: the full agent trajectory.
 
 ## CLI reference
