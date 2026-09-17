@@ -1,0 +1,53 @@
+# Install command per (repo, version) for every pair in the swefficiency_lite test split,
+# vendored from swefficiency.harness.constants.MAP_REPO_VERSION_TO_SPECS in the swefficiency package.
+astropy/astropy:
+  '1.3': pip install -e .[test]
+  '4.3': pip install -e .[dev_all]
+  '5.0': pip install -e .[dev_all]
+  '5.1': pip install -e .[dev_all]
+  v5.3: pip install -e .[dev_all]
+dask/dask:
+  '2.6': pip install --no-deps -e .
+  '2.7': pip install --no-deps -e .
+  '2023.6': pip install --no-deps -e .
+  '2023.7': pip install --no-deps -e .
+matplotlib/matplotlib:
+  '3.3': pip install -e .
+  '3.5': pip install -e . --no-build-isolation
+numpy/numpy:
+  '1.15': pip install --no-build-isolation -e .
+  '1.20': pip install --no-build-isolation -e .
+  '1.23': pip install --no-build-isolation -e .
+  '1.26': pip install --no-build-isolation -e .
+  '2.1': pip install -e . --no-build-isolation
+pandas-dev/pandas:
+  '0.23': pip install -e . --no-build-isolation --no-use-pep517; pip uninstall pytest-qt -y;
+  '0.24': pip install -e . --no-build-isolation --no-use-pep517; pip uninstall pytest-qt -y;
+  '0.25': pip install -e . --no-build-isolation --no-use-pep517; pip uninstall pytest-qt -y;
+  '1.0': export CFLAGS="$CFLAGS -fwrapv -fno-strict-overflow -fno-strict-aliasing -Wno-error -Wno-array-bounds -Wno-deprecated-declarations -Wno-sign-compare -Wno-strict-prototypes -Wno-cpp -Wno-unused-function -Wno-missing-prototypes -Wno-implicit-function-declaration -Wno-return-type"; pip install -e . --no-build-isolation; pip uninstall pytest-qt -y;
+  '1.1': export CFLAGS="$CFLAGS -fwrapv -fno-strict-overflow -fno-strict-aliasing -Wno-error -Wno-array-bounds -Wno-deprecated-declarations -Wno-sign-compare -Wno-strict-prototypes -Wno-cpp -Wno-unused-function -Wno-missing-prototypes -Wno-implicit-function-declaration -Wno-return-type"; pip install -e . --no-build-isolation; pip uninstall pytest-qt -y;
+  '1.2': export CFLAGS="$CFLAGS -fwrapv -fno-strict-overflow -fno-strict-aliasing -Wno-error -Wno-array-bounds -Wno-deprecated-declarations -Wno-sign-compare -Wno-strict-prototypes -Wno-cpp -Wno-unused-function -Wno-missing-prototypes -Wno-implicit-function-declaration -Wno-return-type"; pip install -e . --no-build-isolation; pip uninstall pytest-qt -y;
+  '1.3': export CFLAGS="$CFLAGS -fwrapv -fno-strict-overflow -fno-strict-aliasing -Wno-error -Wno-array-bounds -Wno-deprecated-declarations -Wno-sign-compare -Wno-strict-prototypes -Wno-cpp -Wno-unused-function -Wno-missing-prototypes -Wno-implicit-function-declaration -Wno-return-type"; pip install -e . --no-build-isolation; pip uninstall pytest-qt -y;
+  '1.4': export CFLAGS="$CFLAGS -fwrapv -fno-strict-overflow -fno-strict-aliasing -Wno-error -Wno-array-bounds -Wno-deprecated-declarations -Wno-sign-compare -Wno-strict-prototypes -Wno-cpp -Wno-unused-function -Wno-missing-prototypes -Wno-implicit-function-declaration -Wno-return-type"; pip install -e . --no-build-isolation; pip uninstall pytest-qt -y;
+  '1.5': export CFLAGS="$CFLAGS -fwrapv -fno-strict-overflow -fno-strict-aliasing -Wno-error -Wno-array-bounds -Wno-deprecated-declarations -Wno-sign-compare -Wno-strict-prototypes -Wno-cpp -Wno-unused-function -Wno-missing-prototypes -Wno-implicit-function-declaration -Wno-return-type"; pip install -e . --no-build-isolation; pip uninstall pytest-qt -y;
+  '2.0': export CFLAGS="$CFLAGS -fwrapv -fno-strict-overflow -fno-strict-aliasing -Wno-error -Wno-array-bounds -Wno-deprecated-declarations -Wno-sign-compare -Wno-strict-prototypes -Wno-cpp -Wno-unused-function -Wno-missing-prototypes -Wno-implicit-function-declaration -Wno-return-type"; pip install -e . --no-build-isolation; pip uninstall pytest-qt -y;
+  '2.1': export CFLAGS="$CFLAGS -fwrapv -fno-strict-overflow -fno-strict-aliasing -Wno-error -Wno-array-bounds -Wno-deprecated-declarations -Wno-sign-compare -Wno-strict-prototypes -Wno-cpp -Wno-unused-function -Wno-missing-prototypes -Wno-implicit-function-declaration -Wno-return-type"; pip install -e . --no-build-isolation; pip uninstall pytest-qt -y;
+  '2.2': export CFLAGS="$CFLAGS -fwrapv -fno-strict-overflow -fno-strict-aliasing -Wno-error -Wno-array-bounds -Wno-deprecated-declarations -Wno-sign-compare -Wno-strict-prototypes -Wno-cpp -Wno-unused-function -Wno-missing-prototypes -Wno-implicit-function-declaration -Wno-return-type"; pip install -e . --no-build-isolation; pip uninstall pytest-qt -y;
+pydata/xarray:
+  '0.19': pip install -e . --no-build-isolation
+  '2022.09': pip install -e . --no-build-isolation
+  '2023.07': pip install -e . --no-build-isolation
+scikit-learn/scikit-learn:
+  '0.22': pip install --no-use-pep517 --no-build-isolation -e .
+  '0.24': pip install --no-use-pep517 --no-build-isolation -e .
+  '1.0': pip install --no-use-pep517 --no-build-isolation -e .
+scipy/scipy:
+  '1.11': pip install --no-build-isolation -e .
+  '1.15': pip install --no-build-isolation -e .
+  '1.3': pip install --no-build-isolation -e .
+  '1.4': pip install --no-build-isolation -e .
+sympy/sympy:
+  '1.0': pip install -e .
+  '1.4': pip install -e .
+  '1.8': pip install -e .
+  '1.9': pip install -e .

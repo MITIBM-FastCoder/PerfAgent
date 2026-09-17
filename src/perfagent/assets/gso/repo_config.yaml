@@ -1,0 +1,461 @@
+# Per-repo pytest configuration for stable test suite building.
+# Each repo has base_args (appended after "pytest") and optional deselect/ignore lists.
+
+repos:
+  pandas-dev/pandas:
+    pytest_cwd: /
+    base_args: >-
+      -qq --tb=long -p no:cacheprovider
+      --continue-on-collection-errors
+      -o addopts=
+      -o console_output_style=progress
+      -W ignore::DeprecationWarning
+      -m "not slow and not network and not db and not single_cpu and not arm_slow and not clipboard and not high_memory"
+      --pyargs pandas
+    ignore:
+      - .venv/lib/python3.10/site-packages/pandas/tests/plotting
+      - .venv/lib/python3.10/site-packages/pandas/tests/io
+      - .venv/lib/python3.10/site-packages/pandas/tests/window
+      - .venv/lib/python3.10/site-packages/pandas/tests/computation/test_eval.py
+      - .venv/lib/python3.10/site-packages/pandas/tests/groupby/test_raises.py
+      - .venv/lib/python3.10/site-packages/pandas/tests/scalar/timestamp/test_formats.py
+      - .venv/lib/python3.10/site-packages/pandas/tests/scalar/timestamp/test_rendering.py
+      - .venv/lib/python3.10/site-packages/pandas/tests/tslibs/test_parsing.py
+      - .venv/lib/python3.10/site-packages/pandas/tests/scalar/timedelta/test_timedelta.py
+
+  numpy/numpy:
+    pytest_cwd: /
+    pytest_tooling_packages:
+      - pytest
+      - pytest-reportlog
+      - pytest-testmon
+      - pytest-timeout
+      - pytest-xdist
+      - pytest-randomly
+      - cython
+      - "setuptools<82"
+      - hypothesis==6.141.1
+    base_args: >-
+      -qq --tb=long -p no:cacheprovider --continue-on-collection-errors
+      -o addopts=
+      -m "not slow and not slow_pypy and not leaks_references and not valgrind_error"
+      -W ignore::hypothesis.errors.HypothesisDeprecationWarning
+      --pyargs numpy
+    ignore:
+      - .venv/lib/python3.11/site-packages/numpy/typing/tests/test_typing.py
+      - .venv/lib/python3.11/site-packages/numpy/distutils/tests
+      - .venv/lib/python3.11/site-packages/numpy/tests/test_public_api.py
+      - .venv/lib/python3.11/site-packages/numpy/core/tests/test_mem_policy.py
+      - .venv/lib/python3.11/site-packages/numpy/_core/tests/test_mem_policy.py
+
+  huggingface/datasets:
+    base_args: >-
+      -qq --tb=long -p no:cacheprovider --continue-on-collection-errors
+  
+  abetlen/llama-cpp-python:
+    base_args: >-
+      -qq --tb=long -p no:cacheprovider --continue-on-collection-errors
+    profiler_variant: llama
+    parser_variant: llama
+
+  python-pillow/Pillow:
+    base_args: >-
+      -qq --tb=long -p no:cacheprovider --continue-on-collection-errors
+
+  uploadcare/pillow-simd:
+    base_args: >-
+      -qq --tb=long -p no:cacheprovider --continue-on-collection-errors
+
+  huggingface/tokenizers:
+    pytest_cwd: /testbed/bindings/python
+    base_args: >-
+      -qq --tb=long -p no:cacheprovider --continue-on-collection-errors
+      -m "not slow"
+    ignore:
+      - tests/test_serialization.py
+    parser_variant: rust
+
+  tornadoweb/tornado:
+    pytest_cwd: /
+    base_args: >-
+      -qq --tb=long -p no:cacheprovider --continue-on-collection-errors
+      --pyargs tornado
+
+  huggingface/transformers:
+    base_args: >-
+      -qq --tb=no -p no:cacheprovider --continue-on-collection-errors
+    ignore:
+      - examples/research_projects/codeparrot/scripts/tests
+    pytest_command: [python, -m, pytest]
+    extra_test_installs:
+      - [parameterized, "pyarrow<21", "setuptools<82"]
+
+  pydantic/pydantic:
+    base_args: >-
+      -qq --tb=long -p no:cacheprovider --continue-on-collection-errors
+
+# Per-instance overrides.
+instance_overrides:
+  patch_transformers_testing_utils:
+    - huggingface__transformers-253f9a3
+    - huggingface__transformers-211f93a
+  # Replaces the old install_jsonschema / install_pytest_benchmark /
+  # install_tzdata membership lists. Each inner list becomes one
+  # `uv pip install ...` line, in order (jsonschema -> pytest-benchmark ->
+  # tzdata, matching the old build_run_tests_install_commands order).
+  extra_test_installs:
+    pydantic__pydantic-addf1f9:
+      - [jsonschema]
+      - [pytest-benchmark]
+    pydantic__pydantic-c2647ab:
+      - [jsonschema]
+      - [pytest-benchmark]
+    pydantic__pydantic-ac9e6ee:
+      - [pytest-benchmark]
+    pandas-dev__pandas-65bca65:
+      - [tzdata]
+    pandas-dev__pandas-f298507:
+      - [tzdata]
+    pandas-dev__pandas-e7e3676:
+      - [tzdata]
+    pandas-dev__pandas-c34da50:
+      - [tzdata]
+    pandas-dev__pandas-81b5f1d:
+      - [tzdata]
+    pandas-dev__pandas-438b957:
+      - [tzdata]
+    pandas-dev__pandas-c6cf37a:
+      - [tzdata]
+    pandas-dev__pandas-9097263:
+      - [tzdata]
+    pandas-dev__pandas-191557d:
+      - [tzdata]
+  # Per-instance profiler variant (repo-level llama/rust variants live under repos.*).
+  # The old runner pinned huggingface__datasets-c5464b3, huggingface__datasets-ef3b5dd and
+  # huggingface__tokenizers-bfd9cde to no_native because py-spy --native lost ~93% of their
+  # samples ("failed to get os threadid" on Python 3.9). The patched py-spy the harness now
+  # installs (perfagent/pyspy.py) fixes that, so they profile natively like every other task.
+  profiler_variant: {}
+  patch_pydantic_yield_fixture:
+    - pydantic__pydantic-4a09447
+  extra_deselects:
+    numpy__numpy-382b3ff:
+      - .venv/lib/python3.11/site-packages/numpy/_core/tests/test_multiarray.py::TestSizeOf::test_resize_structured[u4,f4]
+      - .venv/lib/python3.11/site-packages/numpy/_core/tests/test_multiarray.py::TestSizeOf::test_resize_structured[u4,O]
+      - .venv/lib/python3.11/site-packages/numpy/_core/tests/test_stringdtype.py::test_resize_method
+    numpy__numpy-21832:
+      - .venv/lib/python3.11/site-packages/numpy/_core/tests/test_multiarray.py::TestSizeOf::test_resize_structured[u4,f4]
+      - .venv/lib/python3.11/site-packages/numpy/_core/tests/test_multiarray.py::TestSizeOf::test_resize_structured[u4,O]
+      - .venv/lib/python3.11/site-packages/numpy/_core/tests/test_stringdtype.py::test_resize_method
+    numpy__numpy-cb461ba:
+      - .venv/lib/python3.11/site-packages/numpy/_core/tests/test_multiarray.py::TestMethods::test_sort_unsigned
+      - .venv/lib/python3.11/site-packages/numpy/_core/tests/test_multiarray.py::TestMethods::test_sort_signed
+      - .venv/lib/python3.11/site-packages/numpy/_core/tests/test_multiarray.py::TestLexsort::test_basic
+      - .venv/lib/python3.11/site-packages/numpy/_core/tests/test_multiarray.py::test_sort_float
+      - .venv/lib/python3.11/site-packages/numpy/_core/tests/test_multiarray.py::test_sort_float16
+      - .venv/lib/python3.11/site-packages/numpy/_core/tests/test_multiarray.py::test_sort_int
+      - .venv/lib/python3.11/site-packages/numpy/_core/tests/test_multiarray.py::test_sort_uint
+      - .venv/lib/python3.11/site-packages/numpy/_core/tests/test_multiarray.py::test_argsort_float
+      - .venv/lib/python3.11/site-packages/numpy/_core/tests/test_multiarray.py::test_argsort_int
+      - .venv/lib/python3.11/site-packages/numpy/_core/tests/test_multiarray.py::test_partition_int
+      - .venv/lib/python3.11/site-packages/numpy/_core/tests/test_multiarray.py::test_partition_fp
+      - .venv/lib/python3.11/site-packages/numpy/_core/tests/test_scalarmath.py::TestBaseMath::test_blocked
+      - .venv/lib/python3.11/site-packages/numpy/_core/tests/test_half.py::TestHalf::test_half_ordering
+      - .venv/lib/python3.11/site-packages/numpy/lib/tests/test_arraysetops.py::TestUnique::test_unique_1d
+  targets:
+    huggingface__transformers-253f9a3:
+      - tests/models/gpt_neox/test_modeling_gpt_neox.py
+      - tests/models/gpt_neox_japanese/test_modeling_gpt_neox_japanese.py
+      - tests/models/gpt_neox_japanese/test_tokenization_gpt_neox_japanese.py
+  extra_ignores:
+    huggingface__tokenizers-076319d:
+      - tests/bindings/test_encoding.py
+      - tests/bindings/test_tokenizer.py
+      - tests/bindings/test_trainers.py
+      - tests/implementations/test_base_tokenizer.py
+      - tests/implementations/test_bert_wordpiece.py
+      - tests/implementations/test_byte_level_bpe.py
+      - tests/implementations/test_char_bpe.py
+      - tests/implementations/test_sentencepiece.py
+      - tests/documentation/test_tutorial_train_from_iterators.py
+    huggingface__tokenizers-fc76ad4:
+      - tests/bindings/test_encoding.py
+      - tests/bindings/test_tokenizer.py
+      - tests/bindings/test_trainers.py
+      - tests/implementations/test_base_tokenizer.py
+      - tests/implementations/test_bert_wordpiece.py
+      - tests/implementations/test_byte_level_bpe.py
+      - tests/implementations/test_char_bpe.py
+      - tests/implementations/test_sentencepiece.py
+      - tests/documentation/test_tutorial_train_from_iterators.py
+    huggingface__transformers-253f9a3:
+      - tests/pipelines
+      - tests/test_pipeline_mixin.py
+      - tests/models/blip
+      - tests/models/flava
+      - tests/models/longt5
+      - tests/models/speecht5
+      - tests/models/whisper
+      - tests/models/wav2vec2
+      - tests/models/owlvit
+      - tests/models/clip
+      - tests/models/data2vec
+      - tests/models/t5
+      - tests/models/prophetnet
+      - tests/models/gpt_bigcode
+      - tests/models/bark
+      - tests/models/clap
+      - tests/models/pix2struct
+      - tests/models/chinese_clip
+      - tests/models/pegasus
+      - tests/models/musicgen
+      - tests/models/reformer
+      - tests/benchmark/test_benchmark_tf.py
+      - tests/generation/test_tf_logits_process.py
+      - tests/generation/test_tf_utils.py
+      - tests/models/albert/test_modeling_tf_albert.py
+      - tests/models/albert/test_tokenization_albert.py
+      - tests/models/auto/test_modeling_tf_auto.py
+      - tests/models/auto/test_modeling_tf_pytorch.py
+      - tests/models/auto/test_tokenization_auto.py
+      - tests/models/bart/test_modeling_tf_bart.py
+      - tests/models/bart/test_tokenization_bart.py
+      - tests/models/barthez/test_tokenization_barthez.py
+      - tests/models/bert/test_modeling_tf_bert.py
+      - tests/models/bert/test_tokenization_bert.py
+      - tests/models/bert/test_tokenization_bert_tf.py
+      - tests/models/bert_generation/test_tokenization_bert_generation.py
+      - tests/models/bert_japanese/test_tokenization_bert_japanese.py
+      - tests/models/bertweet/test_tokenization_bertweet.py
+      - tests/models/big_bird/test_tokenization_big_bird.py
+      - tests/models/biogpt/test_tokenization_biogpt.py
+      - tests/models/blenderbot/test_modeling_tf_blenderbot.py
+      - tests/models/blenderbot/test_tokenization_blenderbot.py
+      - tests/models/blenderbot_small/test_modeling_tf_blenderbot_small.py
+      - tests/models/blenderbot_small/test_tokenization_blenderbot_small.py
+      - tests/models/blip/test_modeling_tf_blip.py
+      - tests/models/blip/test_modeling_tf_blip_text.py
+      - tests/models/bloom/test_tokenization_bloom.py
+      - tests/models/byt5/test_tokenization_byt5.py
+      - tests/models/camembert/test_modeling_tf_camembert.py
+      - tests/models/camembert/test_tokenization_camembert.py
+      - tests/models/canine/test_tokenization_canine.py
+      - tests/models/clip/test_modeling_tf_clip.py
+      - tests/models/clip/test_tokenization_clip.py
+      - tests/models/code_llama/test_tokenization_code_llama.py
+      - tests/models/codegen/test_tokenization_codegen.py
+      - tests/models/convbert/test_modeling_tf_convbert.py
+      - tests/models/convnext/test_modeling_tf_convnext.py
+      - tests/models/cpmant/test_tokenization_cpmant.py
+      - tests/models/ctrl/test_modeling_tf_ctrl.py
+      - tests/models/ctrl/test_tokenization_ctrl.py
+      - tests/models/cvt/test_modeling_tf_cvt.py
+      - tests/models/data2vec/test_modeling_tf_data2vec_vision.py
+      - tests/models/deberta/test_modeling_tf_deberta.py
+      - tests/models/deberta/test_tokenization_deberta.py
+      - tests/models/deberta_v2/test_modeling_tf_deberta_v2.py
+      - tests/models/deberta_v2/test_tokenization_deberta_v2.py
+      - tests/models/deit/test_modeling_tf_deit.py
+      - tests/models/distilbert/test_modeling_tf_distilbert.py
+      - tests/models/distilbert/test_tokenization_distilbert.py
+      - tests/models/dpr/test_modeling_tf_dpr.py
+      - tests/models/dpr/test_tokenization_dpr.py
+      - tests/models/efficientformer/test_modeling_tf_efficientformer.py
+      - tests/models/electra/test_modeling_tf_electra.py
+      - tests/models/electra/test_tokenization_electra.py
+      - tests/models/encoder_decoder/test_modeling_tf_encoder_decoder.py
+      - tests/models/ernie_m/test_tokenization_ernie_m.py
+      - tests/models/esm/test_modeling_tf_esm.py
+      - tests/models/esm/test_tokenization_esm.py
+      - tests/models/flaubert/test_modeling_tf_flaubert.py
+      - tests/models/fnet/test_tokenization_fnet.py
+      - tests/models/fsmt/test_tokenization_fsmt.py
+      - tests/models/funnel/test_modeling_tf_funnel.py
+      - tests/models/funnel/test_tokenization_funnel.py
+      - tests/models/gpt2/test_modeling_tf_gpt2.py
+      - tests/models/gpt2/test_tokenization_gpt2.py
+      - tests/models/gpt2/test_tokenization_gpt2_tf.py
+      - tests/models/gpt_neox_japanese/test_tokenization_gpt_neox_japanese.py
+      - tests/models/gpt_sw3/test_tokenization_gpt_sw3.py
+      - tests/models/gptj/test_modeling_tf_gptj.py
+      - tests/models/gptsan_japanese/test_tokenization_gptsan_japanese.py
+      - tests/models/groupvit/test_modeling_tf_groupvit.py
+      - tests/models/herbert/test_tokenization_herbert.py
+      - tests/models/hubert/test_modeling_tf_hubert.py
+      - tests/models/jukebox/test_tokenization_jukebox.py
+      - tests/models/layoutlm/test_modeling_tf_layoutlm.py
+      - tests/models/layoutlm/test_tokenization_layoutlm.py
+      - tests/models/layoutlmv2/test_tokenization_layoutlmv2.py
+      - tests/models/layoutlmv3/test_modeling_tf_layoutlmv3.py
+      - tests/models/layoutlmv3/test_tokenization_layoutlmv3.py
+      - tests/models/led/test_modeling_tf_led.py
+      - tests/models/led/test_tokenization_led.py
+      - tests/models/llama/test_tokenization_llama.py
+      - tests/models/longformer/test_modeling_tf_longformer.py
+      - tests/models/longformer/test_tokenization_longformer.py
+      - tests/models/luke/test_tokenization_luke.py
+      - tests/models/lxmert/test_modeling_tf_lxmert.py
+      - tests/models/lxmert/test_tokenization_lxmert.py
+      - tests/models/m2m_100/test_tokenization_m2m_100.py
+      - tests/models/marian/test_modeling_tf_marian.py
+      - tests/models/marian/test_tokenization_marian.py
+      - tests/models/markuplm/test_tokenization_markuplm.py
+      - tests/models/mbart/test_modeling_tf_mbart.py
+      - tests/models/mbart/test_tokenization_mbart.py
+      - tests/models/mbart50/test_tokenization_mbart50.py
+      - tests/models/mgp_str/test_tokenization_mgp_str.py
+      - tests/models/mobilebert/test_modeling_tf_mobilebert.py
+      - tests/models/mobilebert/test_tokenization_mobilebert.py
+      - tests/models/mobilevit/test_modeling_tf_mobilevit.py
+      - tests/models/mpnet/test_modeling_tf_mpnet.py
+      - tests/models/mpnet/test_tokenization_mpnet.py
+      - tests/models/mt5/test_modeling_tf_mt5.py
+      - tests/models/mvp/test_tokenization_mvp.py
+      - tests/models/nllb/test_tokenization_nllb.py
+      - tests/models/nougat/test_tokenization_nougat.py
+      - tests/models/openai/test_modeling_tf_openai.py
+      - tests/models/openai/test_tokenization_openai.py
+      - tests/models/opt/test_modeling_tf_opt.py
+      - tests/models/pegasus/test_modeling_tf_pegasus.py
+      - tests/models/pegasus/test_tokenization_pegasus.py
+      - tests/models/perceiver/test_tokenization_perceiver.py
+      - tests/models/phobert/test_tokenization_phobert.py
+      - tests/models/plbart/test_tokenization_plbart.py
+      - tests/models/pop2piano/test_tokenization_pop2piano.py
+      - tests/models/prophetnet/test_tokenization_prophetnet.py
+      - tests/models/rag/test_modeling_tf_rag.py
+      - tests/models/rag/test_tokenization_rag.py
+      - tests/models/realm/test_tokenization_realm.py
+      - tests/models/reformer/test_tokenization_reformer.py
+      - tests/models/regnet/test_modeling_tf_regnet.py
+      - tests/models/rembert/test_modeling_tf_rembert.py
+      - tests/models/resnet/test_modeling_tf_resnet.py
+      - tests/models/roberta/test_modeling_tf_roberta.py
+      - tests/models/roberta/test_tokenization_roberta.py
+      - tests/models/roberta_prelayernorm/test_modeling_tf_roberta_prelayernorm.py
+      - tests/models/roc_bert/test_tokenization_roc_bert.py
+      - tests/models/roformer/test_modeling_tf_roformer.py
+      - tests/models/roformer/test_tokenization_roformer.py
+      - tests/models/sam/test_modeling_tf_sam.py
+      - tests/models/segformer/test_modeling_tf_segformer.py
+      - tests/models/speech_to_text/test_modeling_tf_speech_to_text.py
+      - tests/models/speech_to_text_2/test_tokenization_speech_to_text_2.py
+      - tests/models/squeezebert/test_tokenization_squeezebert.py
+      - tests/models/swin/test_modeling_tf_swin.py
+      - tests/models/t5/test_modeling_tf_t5.py
+      - tests/models/t5/test_tokenization_t5.py
+      - tests/models/tapas/test_modeling_tf_tapas.py
+      - tests/models/tapas/test_tokenization_tapas.py
+      - tests/models/transfo_xl/test_modeling_tf_transfo_xl.py
+      - tests/models/transfo_xl/test_tokenization_transfo_xl.py
+      - tests/models/vision_encoder_decoder/test_modeling_tf_vision_encoder_decoder.py
+      - tests/models/vision_text_dual_encoder/test_modeling_tf_vision_text_dual_encoder.py
+      - tests/models/vit/test_modeling_tf_vit.py
+      - tests/models/vit_mae/test_modeling_tf_vit_mae.py
+      - tests/models/vits/test_tokenization_vits.py
+      - tests/models/wav2vec2/test_modeling_tf_wav2vec2.py
+      - tests/models/wav2vec2/test_tokenization_wav2vec2.py
+      - tests/models/wav2vec2_phoneme/test_tokenization_wav2vec2_phoneme.py
+      - tests/models/whisper/test_modeling_tf_whisper.py
+      - tests/models/whisper/test_tokenization_whisper.py
+      - tests/models/xglm/test_modeling_tf_xglm.py
+      - tests/models/xglm/test_tokenization_xglm.py
+      - tests/models/xlm/test_modeling_tf_xlm.py
+      - tests/models/xlm/test_tokenization_xlm.py
+      - tests/models/xlm_prophetnet/test_tokenization_xlm_prophetnet.py
+      - tests/models/xlm_roberta/test_modeling_tf_xlm_roberta.py
+      - tests/models/xlm_roberta/test_tokenization_xlm_roberta.py
+      - tests/models/xlnet/test_modeling_tf_xlnet.py
+      - tests/models/xlnet/test_tokenization_xlnet.py
+      - tests/optimization/test_optimization_tf.py
+      - tests/test_modeling_tf_utils.py
+      - tests/test_tokenization_utils.py
+      - tests/tokenization/test_tokenization_fast.py
+      - tests/tokenization/test_tokenization_utils.py
+      - tests/utils/test_activations_tf.py
+    pandas-dev__pandas-061c2e9:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    pandas-dev__pandas-191557d:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    pandas-dev__pandas-1c2ad16:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    pandas-dev__pandas-2278923:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    pandas-dev__pandas-233bd83:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    pandas-dev__pandas-235113e:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    pandas-dev__pandas-2a08b05:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    pandas-dev__pandas-2cdca01:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    pandas-dev__pandas-37e9e06:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    pandas-dev__pandas-438b957:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    pandas-dev__pandas-5d82d8b:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    pandas-dev__pandas-609c3b7:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    pandas-dev__pandas-65bca65:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    pandas-dev__pandas-71c94af:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    pandas-dev__pandas-81b5f1d:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    pandas-dev__pandas-84aca21:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    pandas-dev__pandas-9097263:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    pandas-dev__pandas-9a6c8f0:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    pandas-dev__pandas-9d6d587:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    pandas-dev__pandas-ad3f3f7:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    pandas-dev__pandas-bfaf917:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    pandas-dev__pandas-c34da50:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    pandas-dev__pandas-c51c2a7:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    pandas-dev__pandas-c6cf37a:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    pandas-dev__pandas-ccca5df:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    pandas-dev__pandas-d377cc9:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    pandas-dev__pandas-e7e3676:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    pandas-dev__pandas-e8961f1:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    pandas-dev__pandas-f1211e7:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    pandas-dev__pandas-f298507:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    pandas-dev__pandas-fd43d4b:
+      - .venv/lib/python3.10/site-packages/pandas/tests/arithmetic/test_datetime64.py
+    numpy__numpy-cb461ba:
+      - .venv/lib/python3.11/site-packages/numpy/random/tests
+      - .venv/lib/python3.11/site-packages/numpy/linalg/tests
+      - .venv/lib/python3.11/site-packages/numpy/fft/tests
+      - .venv/lib/python3.11/site-packages/numpy/polynomial/tests
+      - .venv/lib/python3.11/site-packages/numpy/matrixlib/tests
+      - .venv/lib/python3.11/site-packages/numpy/ma/tests
+      - .venv/lib/python3.11/site-packages/numpy/testing/tests
+      - .venv/lib/python3.11/site-packages/numpy/_core/tests/test_mem_policy.py
+      - .venv/lib/python3.11/site-packages/numpy/tests/test_public_api.py
+  patch_pandas_skip_slow:
+    - pandas-dev__pandas-e7e3676
+    - pandas-dev__pandas-c34da50
+    - pandas-dev__pandas-81b5f1d
+    - pandas-dev__pandas-438b957
+    - pandas-dev__pandas-c6cf37a
+    - pandas-dev__pandas-9097263
+    - pandas-dev__pandas-191557d
+    - pandas-dev__pandas-71c94af
+    - pandas-dev__pandas-235113e
+    - pandas-dev__pandas-45f0705
+    - pandas-dev__pandas-c51c2a7
+    - pandas-dev__pandas-2278923
+    - pandas-dev__pandas-9d6d587

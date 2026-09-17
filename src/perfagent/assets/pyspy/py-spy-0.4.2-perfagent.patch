@@ -1,0 +1,82 @@
+--- a/src/python_spy.rs
++++ b/src/python_spy.rs
+@@ -41,6 +41,24 @@
+     pub dockerized: bool,
+ }
+ 
++
++/// perfagent patch: scan glibc's `struct pthread` for the kernel thread id.
++#[cfg(all(target_os = "linux", feature = "unwind"))]
++fn read_tid_from_pthread_struct(process: &Process, pthread: u64, os_tids: &HashSet<Tid>) -> Option<Tid> {
++    const KNOWN_TID_OFFSET: usize = 0x2d0;
++    const SCAN_BYTES: usize = 0x400;
++    let bytes = process.copy(pthread as usize, SCAN_BYTES).ok()?;
++    let at = |offset: usize| -> Option<Tid> {
++        let chunk = bytes.get(offset..offset + 4)?;
++        let candidate = Tid::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
++        (candidate > 0 && os_tids.contains(&candidate)).then_some(candidate)
++    };
++    if let Some(tid) = at(KNOWN_TID_OFFSET) {
++        return Some(tid);
++    }
++    (0..SCAN_BYTES - 4).step_by(4).find_map(at)
++}
++
+ impl PythonSpy {
+     /// Constructs a new PythonSpy object.
+     pub fn new(pid: Pid, config: &Config) -> Result<PythonSpy, Error> {
+@@ -311,11 +329,20 @@
+             {
+                 if self.config.native {
+                     if let Some(native) = self.native.as_mut() {
+-                        let thread_id = trace
+-                            .os_thread_id
+-                            .ok_or_else(|| format_err!("failed to get os threadid"))?;
+-                        let os_thread = remoteprocess::Thread::new(thread_id as Tid)?;
+-                        trace.frames = native.merge_native_thread(&trace.frames, &os_thread)?
++                        // perfagent patch: never fail the whole sample because one thread could not
++                        // be mapped or unwound; keep that thread's python frames instead.
++                        match trace.os_thread_id {
++                            Some(thread_id) => {
++                                let merged = remoteprocess::Thread::new(thread_id as Tid)
++                                    .map_err(Error::from)
++                                    .and_then(|os_thread| native.merge_native_thread(&trace.frames, &os_thread));
++                                match merged {
++                                    Ok(frames) => trace.frames = frames,
++                                    Err(e) => warn!("native merge failed for python thread {} (os {}): {}", python_thread_id, thread_id, e),
++                                }
++                            }
++                            None => warn!("no os threadid for python thread {}: keeping python-only frames", python_thread_id),
++                        }
+                     }
+                 }
+             }
+@@ -449,6 +476,28 @@
+             threads = thread.next();
+         }
+ 
++        // perfagent patch: on glibc a pthread_t is a pointer to `struct pthread`, which stores the
++        // kernel thread id (`pid_t tid`, offset 0x2d0 on x86_64 for every glibc since 2.26). Read it
++        // straight out of the target's memory instead of guessing it from the RBX register below;
++        // the register heuristic fails on newer glibc and on threads deep inside native code,
++        // which surfaces as "failed to get os threadid" for the whole sample.
++        {
++            let os_tids: HashSet<Tid> = self
++                .process
++                .threads()?
++                .iter()
++                .filter_map(|t| t.id().ok())
++                .collect();
++            for &pthread in all_python_threads.iter() {
++                if pthread == 0 || self.python_thread_ids.contains_key(&pthread) {
++                    continue;
++                }
++                if let Some(tid) = read_tid_from_pthread_struct(&self.process, pthread, &os_tids) {
++                    self.python_thread_ids.insert(pthread, tid);
++                }
++            }
++        }
++
+         let processed_os_threads: HashSet<Tid> =
+             HashSet::from_iter(self.python_thread_ids.values().copied());
+ 
