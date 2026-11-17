@@ -6,3 +6,4 @@
   - [ ] Disable network access and adjust test scripts to use locally cached copies instead. Note: this can be challenging as some scripts require network access. Disabling only github/pypi also might not be sufficient.
   - [ ] Remove extraneous files that may leak the answer
     - [x] Remove the GSO setup recipe and post-baseline Git history before the agent starts
+    - [ ] Update Docker images to remove these scripts after using them
