@@ -252,6 +252,7 @@ class GsoAdapter(BenchmarkAdapter):
             for spec in _active_patch_specs(config, instance_id)
         ]
         files += [
+            ContainerFile(src=assets / "scripts" / "clean_checkout.py", dest="/clean_checkout.py"),
             ContainerFile(src=assets / "scripts" / "deselect_plugin.py", dest="/deselect_plugin.py"),
             ContainerFile(src=assets / "scripts" / "test_stats_plugin.py", dest="/test_stats_plugin.py"),
             ContainerFile(src=workload, dest="/perf_script.py", immutable=True),
@@ -280,6 +281,11 @@ class GsoAdapter(BenchmarkAdapter):
             SetupCommand(command=cmd, cwd="/testbed", context=str(spec["context"]))
             for spec, cmd in zip(_active_patch_specs(config, instance_id), patch_commands)
         ]
+        # Run after the baseline build, which may initialize additional submodules.
+        setup_commands.append(SetupCommand(
+            command=pytest_cmd.shell_join(["python3", "/clean_checkout.py", instance.raw["opt_commit"]]),
+            context="remove GSO setup recipe and post-baseline Git history",
+        ))
 
         env = {
             "PYTHONPATH": "/",

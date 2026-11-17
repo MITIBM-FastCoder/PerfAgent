@@ -218,6 +218,8 @@ The test_db contains information on the set of tests to include/exclude when val
 
 Images are pulled from Docker Hub at `ryandeng1/perfagent:{benchmark}.{instance_id}`, where `benchmark` is `gso` or `swefficiency` and `instance_id` is the specific task id. Each benchmark task has its own image (102 for GSO, 100 for SWE-fficiency-Lite). The GSO and SWE-fficiency repositories contain code on how to build the specific images for each benchmark task.
 
+During GSO setup, PerfAgent removes the image's setup recipe, prunes Git history beyond the checked-out baseline in the repository and its initialized submodules, and verifies that the upstream optimization commit is absent before starting the agent. Historical release tags remain available for builds.
+
 ### Patched py-spy
 Right now the docker images built py-spy 0.4.1 by default. There is ongoing work fixing some of the issues with py-spy on GSO and SWE-fficiency and integrating it within the docker images.
 
