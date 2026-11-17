@@ -7,8 +7,10 @@ Folded stacks format (one stack trace per line):
 
 import argparse
 import json
+import os
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
+from functools import lru_cache
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -449,9 +451,59 @@ class FoldedStacksProfile(object):
         }
 
 
+@lru_cache(maxsize=None)
+def checkout_file(filename, root):
+    """Map py-spy's shortened module path back to a file in the benchmark checkout."""
+    if not filename:
+        return None
+    path = Path(filename)
+    if path.is_absolute():
+        try:
+            path = path.relative_to(root)
+        except ValueError:
+            for marker in ("/site-packages/", "/dist-packages/"):
+                if marker in filename:
+                    path = Path(filename.split(marker, 1)[1])
+                    break
+            else:
+                return None
+    if ".." in path.parts:
+        return None
+    for prefix in ("", "src", "lib"):
+        relative = Path(prefix) / path
+        if (root / relative).is_file():
+            return str(relative)
+    return None
+
+
+def worker_report(profile, top_n, root):
+    """Group samples by the deepest repository function, including its work in dependencies."""
+    counts = Counter()
+    for stack in profile.stacks:
+        for frame in reversed(stack.frames):
+            filename = checkout_file(frame.filename, root)
+            if filename is not None:
+                counts[(filename, frame.function)] += stack.count
+                break
+    total = profile.total_samples
+    return {
+        "total_samples": total,
+        "repository_hotspots": [
+            {"filename": filename, "function": func, "samples": count, "pct": 100.0 * count / total}
+            for (filename, func), count in counts.most_common(top_n)
+        ],
+        "self_hotspots": [
+            {"filename": row.filename, "function": row.function, "lineno": row.lineno,
+             "samples": row.self_samples, "pct": 100.0 * row.self_samples / total}
+            for row in profile.hottest_functions(top_n) if row.self_samples
+        ],
+    }
+
+
 def _parse_args():
     parser = argparse.ArgumentParser(description="Analyze py-spy folded stacks.")
     parser.add_argument("profile", help="Path to folded stacks profile.")
+    parser.add_argument("--workers", help="Active sibling-thread stacks collected during workload().")
     parser.add_argument("--report", choices=["text", "json"], default="text")
     parser.add_argument("--top", type=int, default=5, help="Number of top items to show.")
     parser.add_argument("--top-stacks", type=int, default=5, help="Number of top stacks to show.")
@@ -464,17 +516,13 @@ def _parse_args():
 if __name__ == "__main__":
     args = _parse_args()
 
-    profile = FoldedStacksProfile.load(args.profile)
-    profile = profile.filter_under_function("workload")
-
-    if True or args.report == "json":
-        report = profile.to_json(
-            top_n=args.top,
-            top_stacks_n=args.top_stacks,
-            top_callers_n=args.top_callers,
-            top_callees_n=args.top_callees,
-            top_files_n=args.top_files,
-        )
-        print(json.dumps(report, indent=2))
-    else:
-        print(profile.report(n=args.top))
+    raw = FoldedStacksProfile.load(args.profile)
+    report = raw.filter_under_function("workload").to_json(
+        top_n=args.top, top_stacks_n=args.top_stacks, top_callers_n=args.top_callers,
+        top_callees_n=args.top_callees, top_files_n=args.top_files,
+    )
+    report["raw_samples"] = raw.total_samples
+    if args.workers:
+        root = Path(os.environ.get("PARSE_PYSPY_REPO_ROOT", "/testbed"))
+        report["workers"] = worker_report(FoldedStacksProfile.load(args.workers), args.top, root)
+    print(json.dumps(report, indent=2))

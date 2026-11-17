@@ -1,11 +1,13 @@
 """Builds perfagent's patched py-spy inside each task container and puts it first on PATH.
 
-Why a patch: the task images run Python 3.8-3.10, where py-spy has to guess each thread's kernel
+Why a patch: older CPython versions require py-spy to infer each thread's kernel
 id from a CPU register when `--native` is on. On thread-heavy workloads (rayon, tokio, pyarrow)
 that guess misses, and py-spy then drops the whole sample with "failed to get os threadid". Three
 GSO tasks lost ~93% of their samples this way and used to be pinned to a Python-only profile. The
 patch (assets/pyspy/*.patch, against py-spy 0.4.2) reads the id from glibc's thread struct instead,
 and keeps a thread's Python frames when its native frames cannot be merged.
+For SWE-fficiency, it also records other active threads while a caller is in perf_script.py's
+workload(). The SWE wrapper requests these folded stacks with PERFAGENT_SIBLING_PROFILE.
 
 Why build in the container: the executable must link against the image's own libunwind, and every
 task image carries the Rust toolchain that installed its stock py-spy. The build downloads the

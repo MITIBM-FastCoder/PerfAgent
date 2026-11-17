@@ -80,3 +80,37 @@
          let processed_os_threads: HashSet<Tid> =
              HashSet::from_iter(self.python_thread_ids.values().copied());
  
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -218,3 +218,12 @@
++    let sibling_path = std::env::var_os("PERFAGENT_SIBLING_PROFILE");
++    let mut siblings = flamegraph::Flamegraph::new(config.show_line_numbers);
++    let is_workload = |trace: &StackTrace| {
++        trace.pid == pid && trace.frames.iter().any(|frame| {
++            frame.name == "workload" &&
++                frame.filename.trim_start_matches('/') == "perf_script.py"
++        })
++    };
++
+     let mut errors = 0;
+     let mut intervals = 0;
+     let mut samples = 0;
+@@ -264,4 +273,9 @@
++        // Check the caller before idle-thread filtering: it often waits for its pool.
++        let during_workload = sibling_path.is_some() && sample.traces.iter().any(&is_workload);
+         for trace in sample.traces.iter_mut() {
++            if during_workload && trace.pid == pid && trace.active && !is_workload(trace) {
++                siblings.increment(trace)?;
++            }
+             if !(config.include_idle || trace.active) {
+                 continue;
+             }
+@@ -335,3 +349,8 @@
++    if let Some(path) = sibling_path {
++        let mut file = std::fs::File::create(path)?;
++        siblings.write_raw(&mut file)?;
++    }
++
+     match config.format.as_ref().unwrap() {
+         FileFormat::flamegraph => {
+             println!(

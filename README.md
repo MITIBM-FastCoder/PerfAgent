@@ -221,9 +221,10 @@ Images are pulled from Docker Hub at `ryandeng1/perfagent:{benchmark}.{instance_
 During GSO setup, PerfAgent removes the image's setup recipe, prunes Git history beyond the checked-out baseline in the repository and its initialized submodules, and verifies that the upstream optimization commit is absent before starting the agent. Historical release tags remain available for builds.
 
 ### Patched py-spy
-Right now the docker images built py-spy 0.4.1 by default. There is ongoing work fixing some of the issues with py-spy on GSO and SWE-fficiency and integrating it within the docker images.
 
-For now, set `environment.pyspy: image` in the run config to use the image's py-spy which works fine for most benchmark tasks.
+By default, PerfAgent builds py-spy 0.4.2 with its thread-ID patch inside each task image. All SWE-fficiency tasks use native profiling. The SWE report includes the caller's hotspots under `workload()` and a separate `workers` table for other active Python-managed threads observed during the same sampling ticks. The worker table credits each sample to its deepest function in the checkout, including work delegated to dependencies. Its percentages use `workers.total_samples`.
+
+Setting `environment.pyspy: image` uses the image's installed binary. Stock py-spy 0.4.1 can lose native samples on threaded workloads and produces only the caller report.
 
 ### Profiling loop
 
@@ -238,7 +239,7 @@ From the script, it's important to note that the reported timing is the *first* 
 
 - `src/perfagent/adapters/`: benchmark-specific code that builds the `HarnessSpec` for each instance. The benchmark-specific adapters produce the build script, test script etc. for the tasks in a particular benchmark. A lot of the code which is taken from the [`GSO`](https://github.com/gso-bench/gso) and [`SWE-fficiency`](https://github.com/swefficiency/swefficiency) repositories.
 - `src/perfagent/workspace.py`: pulls the Docker image and starts the container (installs the relevant packages, copies build/test/profiler/workload scripts, extracts the stable test suite, seeds testmon data).
-- `src/perfagent/pyspy.py` and `src/perfagent/assets/pyspy/`: the py-spy patch and the script that builds and installs it inside each task container. See [Patched py-spy](#patched-py-spy). Currently, this is still a work in progress.
+- `src/perfagent/pyspy.py` and `src/perfagent/assets/pyspy/`: the py-spy patch and the script that builds and installs it inside each task container. See [Patched py-spy](#patched-py-spy).
 - `src/perfagent/environment.py` (`PerfDockerEnvironment`): mini-swe-agent's Docker environment with some added options to make it work with GSO and SWE-fficiency.
 - `src/perfagent/agent.py` (`PerfAgent`): the agent loop, built on [`mini-swe-agent`](https://github.com/SWE-agent/mini-swe-agent).
 - `src/perfagent/tools/` and `src/perfagent/assets/tools/`: extra tools the model can call besides bash. Right now `str_replace_editor` is the only tool supported. See [The str_replace_editor tool](#the-str_replace_editor-tool).

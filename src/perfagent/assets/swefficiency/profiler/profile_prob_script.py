@@ -1,9 +1,8 @@
-import argparse
 import os
-import json
 import subprocess
-import shlex
 import sys
+import tempfile
+from pathlib import Path
 
 from typing import Tuple
 
@@ -13,8 +12,7 @@ def time_workload(workload_script: str) -> Tuple[str, bool, float]:
     py-spy sampling (especially --native) inflates and distorts wall time, so
     the runtime reported to the agent must never come from the instrumented run.
     """
-    time_cmd = f"python {workload_script}"
-    result = subprocess.run(shlex.split(time_cmd), cwd="/", stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+    result = subprocess.run(["python", workload_script], cwd="/", stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
     if result.returncode != 0:
         return f"error running script:\n{result.stdout}\n{result.stderr}", False, 0.0
 
@@ -30,24 +28,32 @@ def time_workload(workload_script: str) -> Tuple[str, bool, float]:
     return "", True, float(runtime.split(":")[1])
 
 def profile_workload(workload_script: str) -> Tuple[str, bool]:
-    profile_cmd = f"py-spy record --native -r 50 -f raw -o profile.folded -- python {workload_script}"
-    result = subprocess.run(shlex.split(profile_cmd), cwd="/", stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-    if result.returncode != 0:
-        if "No child processes" not in result.stdout and "No child processes" not in result.stderr:
-            return f"error running script:\n{result.stdout}\n{result.stderr}", False
+    # Parse files from this invocation even if another run has produced /profile.folded.
+    with tempfile.TemporaryDirectory(dir="/") as tmp:
+        folded = Path(tmp) / "profile.folded"
+        workers = Path(tmp) / "workers.folded"
+        cmd = ["py-spy", "record", "--native", "-r", "50", "-f", "raw", "-o", str(folded),
+               "--", "python", workload_script]
+        result = subprocess.run(
+            cmd, cwd="/", stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
+            env=dict(os.environ, PERFAGENT_SIBLING_PROFILE=str(workers)),
+        )
+        if os.environ.get("PYSPY_LOG_FILE"):
+            Path(os.environ["PYSPY_LOG_FILE"]).write_text(result.stdout + result.stderr)
+        # Older recorders can report ECHILD after successfully writing the profile.
+        if (result.returncode and "No child processes" not in result.stdout + result.stderr
+                or not folded.is_file() or not any(line.startswith("Mean:") for line in result.stdout.splitlines())):
+            return f"error profiling workload:\n{result.stdout}\n{result.stderr}", False
 
-    parse_profile_cmd = "python parse_pyspy_compat.py profile.folded"
-    # parse_profile_cmd = "python parse_pyspy.py profile.folded"
-    # parse_profile_cmd = "python parse_pyspy_enhanced.py profile.folded --report json"
-    result = subprocess.run(shlex.split(parse_profile_cmd), cwd="/", stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-    assert result.returncode == 0, f"parsing profile should never fail. stdout: {result.stdout}\nstderr: {result.stderr}"
-
-    filtered_lines = []
-    for line in result.stdout.splitlines():
-        if "py-spy>" in line or "Error" in line:
-            continue
-        filtered_lines.append(line)
-    return "\n".join(filtered_lines), True
+        parse_cmd = ["python", "/parse_pyspy_compat.py", str(folded)]
+        if workers.is_file():  # Stock image binaries do not produce the optional worker profile.
+            parse_cmd.extend(["--workers", str(workers)])
+        parsed = subprocess.run(parse_cmd, cwd="/", stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                universal_newlines=True)
+        if parsed.returncode:
+            return f"error parsing profile:\n{parsed.stderr}", False
+        folded.replace("/profile.folded")
+        return parsed.stdout.strip(), True
 
 def main():
     prob_script_fname = "perf_script.py"

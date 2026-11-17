@@ -150,7 +150,11 @@ agent:
     Below is JSON profiler output from a profiler for a Python workload run against a code repository.
 
     The JSON includes structured profiling data:
-    - `total_samples`: total number of profile samples; below ~100 means percentages are noisy and should be hedged
+    - `total_samples` counts caller stacks under workload(). Fewer than about 100 samples makes its percentages noisy.
+    - `workers.total_samples` counts other active threads sampled while workload() was on a caller's stack.
+      Use `workers.repository_hotspots` to locate work in the checkout. Each sample is credited to its deepest
+      checkout function, including time in dependencies. Worker percentages use the worker sample count.
+      `workers.self_hotspots` shows where those threads were executing.
     - `coverage.pct`: percent of samples covered by the top-N stacks; high values mean a concentrated hot path
     - `hotspots.self`: functions ranked by self time (where CPU actually executes)
     - `hotspots.total`: functions ranked by total time including callees

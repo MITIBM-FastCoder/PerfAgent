@@ -49,7 +49,6 @@ repos:
     deselect:
       - "dask/dataframe/io/tests/test_orc.py"
       - "dask/array/tests/test_image.py::test_preprocess"
-    profiler_variant: no_native
 
   matplotlib/matplotlib:
     base_args: >-
@@ -69,7 +68,6 @@ repos:
     base_args: >-
       -qq --tb=long -rf -p no:cacheprovider --continue-on-collection-errors
       -m "not flaky and not network and not slow"
-    profiler_variant: no_native
 
   scikit-learn/scikit-learn:
     base_args: >-
@@ -104,7 +102,6 @@ repos:
     ignore:
       - "sympy/solvers/tests/test_ode.py"
       - "sympy/utilities/tests/test_wester.py"
-    profiler_variant: no_native
 
 # Per-instance overrides.
 instance_overrides:
