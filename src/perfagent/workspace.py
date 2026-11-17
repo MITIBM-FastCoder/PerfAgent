@@ -15,7 +15,8 @@ console = Console(highlight=False)
 
 def _execute_or_raise(env: PerfDockerEnvironment, command: str, *, cwd: str = "", context: str) -> dict:
     output = env.execute({"command": command}, cwd=cwd)
-    assert output["returncode"] == 0, f"{context} failed. output: {output['output']}"
+    if output["returncode"] != 0:
+        raise RuntimeError(f"{context} failed. output: {output['output']}")
     return output
 
 def _copy_script(env: PerfDockerEnvironment, text: str, dest: str) -> None:
