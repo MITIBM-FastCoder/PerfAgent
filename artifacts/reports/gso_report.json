@@ -11,7 +11,7 @@
         "empty_patch_instances": 4,
         "error_instances": 0,
         "opt_base": 76,
-        "opt_commit": 43,
+        "opt_commit": 44,
         "opt_main": 0
     },
     "instance_sets": {
@@ -311,6 +311,7 @@
             "huggingface__tokenizers-076319d",
             "huggingface__tokenizers-c893204",
             "huggingface__transformers-63b90a5",
+            "numpy__numpy-1b861a2",
             "numpy__numpy-1fcda82",
             "numpy__numpy-2540554",
             "numpy__numpy-28706af",
@@ -1541,74 +1542,74 @@
             "speedup_patch_base": null,
             "speedup_patch_commit": null,
             "speedup_patch_main": null,
-            "gm_speedup_patch_base": 1.57744968240919,
-            "gm_speedup_patch_commit": 0.8679194695719471,
+            "gm_speedup_patch_base": 2.7619932331456782,
+            "gm_speedup_patch_commit": 1.56632729254558,
             "gm_speedup_patch_main": null,
-            "am_speedup_patch_commit": 1.2198923649001359,
-            "gsd_speedup_patch_commit": 1.2972922039451538,
-            "slowdown_perc_patch_commit": 80.0,
-            "hm_speedup_patch_commit": 0.846072301654428,
-            "am_speedup_patch_base": 1.6594950672029594,
-            "gsd_speedup_patch_base": 1.0898506607299467,
+            "am_speedup_patch_commit": 1.7412583174633742,
+            "gsd_speedup_patch_commit": 1.1199081439387448,
+            "slowdown_perc_patch_commit": 0.0,
+            "hm_speedup_patch_commit": 1.5582850043769356,
+            "am_speedup_patch_base": 2.349130796710872,
+            "gsd_speedup_patch_base": 1.2408923155410134,
             "slowdown_perc_patch_base": 0.0,
-            "hm_speedup_patch_base": 1.5726165622666797,
-            "am_speedup_commit_base": 1.3603618769585553,
-            "gm_speedup_commit_base": 1.8175069666165906,
-            "gsd_speedup_commit_base": 1.29678406337137,
+            "hm_speedup_patch_base": 2.712068852707337,
+            "am_speedup_commit_base": 1.3490995409187951,
+            "gm_speedup_commit_base": 1.7633563855335201,
+            "gsd_speedup_commit_base": 1.29216442462302,
             "slowdown_perc_commit_base": 0.0,
-            "hm_speedup_commit_base": 1.7684465628022537,
+            "hm_speedup_commit_base": 1.717253426601002,
             "per_test_speedups": {
                 "patch_base_speedups": [
-                    1.621422251486656,
-                    1.6455965479717067,
-                    1.6173239768234238,
-                    1.3548078546109266,
-                    1.6706418164992372
+                    3.626722121133351,
+                    2.643362615181573,
+                    3.2821126272542775,
+                    2.270610414755936,
+                    2.2498104040781564
                 ],
                 "commit_base_speedups": [
-                    2.5154663857498565,
-                    2.015591880559438,
-                    1.9441086532205598,
-                    1.5912109697670578,
-                    1.2644772065982488
+                    2.4149803304484654,
+                    1.9681766845414363,
+                    1.9224799458780324,
+                    1.4848146605581005,
+                    1.2565759068263942
                 ],
                 "patch_commit_speedups": [
-                    0.644581164221486,
-                    0.8164334078955323,
-                    0.8319102814259928,
-                    0.8514319473358464,
-                    1.3212114918177686
+                    1.5017605217761187,
+                    1.3430514831027214,
+                    1.7072285379576615,
+                    1.5292214409456846,
+                    1.790429365910949
                 ]
             },
-            "base_mean": 0.17923486,
-            "base_std": 0.306157843587214,
-            "patch_mean": 0.10800566,
-            "patch_std": 0.18285897605132215,
-            "commit_mean": 0.13175528,
-            "commit_std": 0.24690647624720582,
+            "base_mean": 0.17908406000000002,
+            "base_std": 0.30578777471005614,
+            "patch_mean": 0.07623418,
+            "patch_std": 0.13755680973058731,
+            "commit_mean": 0.1327434,
+            "commit_std": 0.24797879080872018,
             "main_mean": null,
             "main_std": null,
             "per_test_means": {
                 "base": [
-                    0.0157599,
-                    0.0871034,
-                    0.0597619,
-                    0.0096316,
-                    0.7239175
+                    0.0153472,
+                    0.08852779999999999,
+                    0.0596757,
+                    0.008912599999999998,
+                    0.7229570000000001
                 ],
                 "patch": [
-                    0.0097198,
-                    0.0529312,
-                    0.036951099999999994,
-                    0.007109200000000001,
-                    0.433317
+                    0.0042317,
+                    0.0334906,
+                    0.0181821,
+                    0.003925199999999999,
+                    0.3213413
                 ],
                 "commit": [
-                    0.0062652,
-                    0.0432148,
-                    0.030739999999999996,
-                    0.006053,
-                    0.5725034000000001
+                    0.006355000000000001,
+                    0.0449796,
+                    0.031040999999999996,
+                    0.0060025,
+                    0.5753389
                 ],
                 "main": []
             }
